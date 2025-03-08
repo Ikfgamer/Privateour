@@ -204,48 +204,77 @@ document.addEventListener('DOMContentLoaded', function() {
   function signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
     
-    // Try to use signInWithRedirect if on Replit (to handle the unauthorized domain issue)
-    try {
-      auth.signInWithRedirect(provider)
-        .then(() => {
-          // This won't be called immediately due to redirect
-          console.log('Google sign in redirect successful');
-        })
-        .catch((error) => {
-          console.error('Google sign in error:', error);
-          
-          // If we get an unauthorized domain error, show a helpful message
-          if (error.code === 'auth/unauthorized-domain') {
-            showNotification("To use Google Sign-in: Add this domain to your Firebase Console authorized domains list", "warning");
-            // Fall back to email/password authentication
-            showAuthModal();
-          } else {
-            showNotification(`Sign in failed: ${error.message}`, "error");
-          }
-        });
-    } catch (e) {
-      console.error('Google sign in setup error:', e);
-      showNotification("Google sign-in is currently unavailable. Please use email/password instead.", "warning");
-    }
+    // Add scope for profile info
+    provider.addScope('profile');
+    provider.addScope('email');
     
-    // Setup redirect result handler
-    auth.getRedirectResult().then((result) => {
-      if (result.user) {
-        console.log('Google sign in successful after redirect');
+    // First try signInWithPopup as it works better in embedded environments
+    auth.signInWithPopup(provider)
+      .then((result) => {
+        console.log('Google sign in successful');
         const user = result.user;
         
-        // Check if this is a new user (first time signing in)
+        // Check if this is a new user
         const isNewUser = result.additionalUserInfo?.isNewUser;
         if (isNewUser) {
-          // Create a user document in Firestore
           createUserDocument(user);
         }
         
         showNotification(`Welcome, ${user.displayName}!`, "success");
-      }
-    }).catch((error) => {
-      console.error('Google redirect result error:', error);
-    });
+      })
+      .catch((error) => {
+        console.error('Google sign in popup error:', error);
+        
+        // If popup fails, try redirect as fallback
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
+          try {
+            // Fall back to redirect method
+            auth.signInWithRedirect(provider)
+              .catch((redirectError) => {
+                handleGoogleSignInError(redirectError);
+              });
+              
+            // Setup redirect result handler
+            auth.getRedirectResult().then((result) => {
+              if (result.user) {
+                console.log('Google sign in successful after redirect');
+                const user = result.user;
+                
+                // Check if this is a new user
+                const isNewUser = result.additionalUserInfo?.isNewUser;
+                if (isNewUser) {
+                  createUserDocument(user);
+                }
+                
+                showNotification(`Welcome, ${user.displayName}!`, "success");
+              }
+            }).catch((redirectResultError) => {
+              console.error('Google redirect result error:', redirectResultError);
+              handleGoogleSignInError(redirectResultError);
+            });
+          } catch (e) {
+            console.error('Google sign in setup error:', e);
+            showNotification("Google sign-in is currently unavailable. Please use email/password instead.", "warning");
+          }
+        } else {
+          handleGoogleSignInError(error);
+        }
+      });
+  }
+  
+  function handleGoogleSignInError(error) {
+    console.error('Google sign in error:', error);
+    
+    // Handle specific error codes
+    if (error.code === 'auth/unauthorized-domain') {
+      showNotification("This domain is not authorized for Google Sign-in. Please use email/password instead.", "warning");
+    } else if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
+      showNotification("Google sign-in was cancelled. Please try again.", "info");
+    } else if (error.code === 'auth/network-request-failed') {
+      showNotification("Network error. Please check your connection and try again.", "error");
+    } else {
+      showNotification(`Sign in failed: ${error.message}`, "error");
+    }
   }
 
   function createUserDocument(user) {
@@ -614,102 +643,160 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderTournamentsPage() {
     const mainContent = document.getElementById('main-content');
-    mainContent.innerHTML = `
+    const user = firebase.auth().currentUser;
+    
+    const tournamentsHTML = `
       <div class="container">
         <h2 class="section-title">All Tournaments</h2>
 
         <div class="tournament-filters mb-3">
-          <select class="form-input" style="width: auto;">
-            <option value="all">All Tournaments</option>
-            <option value="upcoming">Upcoming</option>
-            <option value="ongoing">Ongoing</option>
-            <option value="completed">Completed</option>
-          </select>
+          <div class="filter-controls">
+            <select class="form-input tournament-filter" id="tournament-status-filter">
+              <option value="all">All Tournaments</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="ongoing">Ongoing</option>
+              <option value="completed">Completed</option>
+            </select>
+            
+            <select class="form-input tournament-filter ml-2" id="tournament-prize-filter">
+              <option value="all">All Prize Pools</option>
+              <option value="low">Low (< 1000 points)</option>
+              <option value="medium">Medium (1000-3000 points)</option>
+              <option value="high">High (> 3000 points)</option>
+            </select>
+            
+            <input type="text" class="form-input ml-2" id="tournament-search" placeholder="Search tournaments...">
+          </div>
+          
+          <div class="tournament-count">
+            <span id="tournament-count-display">6 tournaments found</span>
+          </div>
         </div>
 
-        <div class="grid">
+        <div class="tournament-grid">
           <div class="tournament-card">
-            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+            <div class="tournament-banner">
+              <span class="tournament-status upcoming">Upcoming</span>
+            </div>
+            <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" alt="Tournament Image" class="tournament-image">
             <div class="tournament-details">
               <h3 class="tournament-title">Weekend Warrior Challenge</h3>
               <div class="tournament-info">
-                <span class="tournament-date">Starts in 2 days</span>
-                <span class="tournament-players">64 players</span>
+                <span class="tournament-date"><i class="far fa-calendar-alt"></i> Starts in 2 days</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 64 players</span>
+              </div>
+              <div class="tournament-game">
+                <span><i class="fas fa-gamepad"></i> Battle Royale</span>
               </div>
               <div class="tournament-prize">Prize: 1000 points</div>
               <div class="tournament-entry">
                 <span class="entry-fee">Entry: 50 points</span>
-                <button class="btn btn-primary">Join Tournament</button>
+                <button class="btn btn-primary tournament-join-btn" data-tournament-id="t1" data-entry-fee="50">Join Tournament</button>
               </div>
             </div>
           </div>
+          
           <div class="tournament-card">
-            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+            <div class="tournament-banner">
+              <span class="tournament-status ongoing">Ongoing</span>
+            </div>
+            <img src="https://images.unsplash.com/photo-1542751371-adc38448a05e?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" alt="Tournament Image" class="tournament-image">
             <div class="tournament-details">
               <h3 class="tournament-title">Pro Gaming League</h3>
               <div class="tournament-info">
-                <span class="tournament-date">Ongoing</span>
-                <span class="tournament-players">128 players</span>
+                <span class="tournament-date"><i class="far fa-calendar-alt"></i> Ongoing</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 128 players</span>
+              </div>
+              <div class="tournament-game">
+                <span><i class="fas fa-gamepad"></i> FPS Championship</span>
               </div>
               <div class="tournament-prize">Prize: 5000 points</div>
               <div class="tournament-entry">
                 <span class="entry-fee">Entry: 200 points</span>
-                <button class="btn btn-primary">Join Tournament</button>
+                <button class="btn btn-primary tournament-join-btn" data-tournament-id="t2" data-entry-fee="200">Join Tournament</button>
               </div>
             </div>
           </div>
+          
           <div class="tournament-card">
-            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+            <div class="tournament-banner">
+              <span class="tournament-status today">Today</span>
+            </div>
+            <img src="https://images.unsplash.com/photo-1519669556878-63bdad8a1a49?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" alt="Tournament Image" class="tournament-image">
             <div class="tournament-details">
               <h3 class="tournament-title">Flash Quiz Challenge</h3>
               <div class="tournament-info">
-                <span class="tournament-date">Today</span>
-                <span class="tournament-players">32 players</span>
+                <span class="tournament-date"><i class="far fa-calendar-alt"></i> Today</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 32 players</span>
+              </div>
+              <div class="tournament-game">
+                <span><i class="fas fa-brain"></i> Trivia Masters</span>
               </div>
               <div class="tournament-prize">Prize: 500 points</div>
               <div class="tournament-entry">
                 <span class="entry-fee">Entry: 25 points</span>
-                <button class="btn btn-primary">Join Tournament</button>
+                <button class="btn btn-primary tournament-join-btn" data-tournament-id="t3" data-entry-fee="25">Join Tournament</button>
               </div>
             </div>
           </div>
+          
           <div class="tournament-card">
-            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+            <div class="tournament-banner">
+              <span class="tournament-status upcoming">Next Week</span>
+            </div>
+            <img src="https://images.unsplash.com/photo-1493711662062-fa541adb3fc8?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" alt="Tournament Image" class="tournament-image">
             <div class="tournament-details">
               <h3 class="tournament-title">Strategy Masters</h3>
               <div class="tournament-info">
-                <span class="tournament-date">Next week</span>
-                <span class="tournament-players">16 players</span>
+                <span class="tournament-date"><i class="far fa-calendar-alt"></i> Next week</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 16 players</span>
+              </div>
+              <div class="tournament-game">
+                <span><i class="fas fa-chess"></i> Strategy Games</span>
               </div>
               <div class="tournament-prize">Prize: 3000 points</div>
               <div class="tournament-entry">
                 <span class="entry-fee">Entry: 150 points</span>
-                <button class="btn btn-primary">Join Tournament</button>
+                <button class="btn btn-primary tournament-join-btn" data-tournament-id="t4" data-entry-fee="150">Join Tournament</button>
               </div>
             </div>
           </div>
+          
           <div class="tournament-card">
-            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+            <div class="tournament-banner">
+              <span class="tournament-status upcoming">Tomorrow</span>
+            </div>
+            <img src="https://images.unsplash.com/photo-1559116315-f69f60c3b506?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" alt="Tournament Image" class="tournament-image">
             <div class="tournament-details">
               <h3 class="tournament-title">Puzzle Marathon</h3>
               <div class="tournament-info">
-                <span class="tournament-date">Tomorrow</span>
-                <span class="tournament-players">50 players</span>
+                <span class="tournament-date"><i class="far fa-calendar-alt"></i> Tomorrow</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 50 players</span>
+              </div>
+              <div class="tournament-game">
+                <span><i class="fas fa-puzzle-piece"></i> Puzzle Games</span>
               </div>
               <div class="tournament-prize">Prize: 800 points</div>
               <div class="tournament-entry">
                 <span class="entry-fee">Entry: 40 points</span>
-                <button class="btn btn-primary">Join Tournament</button>
+                <button class="btn btn-primary tournament-join-btn" data-tournament-id="t5" data-entry-fee="40">Join Tournament</button>
               </div>
             </div>
           </div>
-          <div class="tournament-card">
-            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+          
+          <div class="tournament-card vip-tournament">
+            <div class="tournament-banner">
+              <span class="tournament-status vip">VIP Only</span>
+            </div>
+            <img src="https://images.unsplash.com/photo-1563089145-599997674d42?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" alt="Tournament Image" class="tournament-image">
             <div class="tournament-details">
               <h3 class="tournament-title">VIP Elite Showdown</h3>
               <div class="tournament-info">
-                <span class="tournament-date">This weekend</span>
-                <span class="tournament-players">32 players</span>
+                <span class="tournament-date"><i class="far fa-calendar-alt"></i> This weekend</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 32 players</span>
+              </div>
+              <div class="tournament-game">
+                <span><i class="fas fa-trophy"></i> Multi-game Championship</span>
               </div>
               <div class="tournament-prize">Prize: 10000 points</div>
               <div class="tournament-entry">
@@ -721,6 +808,117 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
       </div>
     `;
+    
+    mainContent.innerHTML = tournamentsHTML;
+    
+    // Add event listeners for tournament filtering
+    const statusFilter = document.getElementById('tournament-status-filter');
+    const prizeFilter = document.getElementById('tournament-prize-filter');
+    const searchInput = document.getElementById('tournament-search');
+    
+    if (statusFilter) {
+      statusFilter.addEventListener('change', filterTournaments);
+    }
+    
+    if (prizeFilter) {
+      prizeFilter.addEventListener('change', filterTournaments);
+    }
+    
+    if (searchInput) {
+      searchInput.addEventListener('input', filterTournaments);
+    }
+    
+    // Add event listeners for join tournament buttons
+    const joinButtons = document.querySelectorAll('.tournament-join-btn');
+    joinButtons.forEach(button => {
+      button.addEventListener('click', function() {
+        const tournamentId = this.getAttribute('data-tournament-id');
+        const entryFee = parseInt(this.getAttribute('data-entry-fee'), 10);
+        
+        if (!user) {
+          showNotification("Please sign in to join tournaments", "warning");
+          showAuthModal();
+          return;
+        }
+        
+        // Check if user has enough points
+        db.collection('users').doc(user.uid).get().then(doc => {
+          if (doc.exists) {
+            const userData = doc.data();
+            const userPoints = userData.points || 0;
+            
+            if (userPoints >= entryFee) {
+              // Here you would implement the tournament join logic
+              showNotification(`Successfully joined tournament! Entry fee: ${entryFee} points`, "success");
+              
+              // Update user points
+              db.collection('users').doc(user.uid).update({
+                points: firebase.firestore.FieldValue.increment(-entryFee),
+                tournaments: firebase.firestore.FieldValue.arrayUnion({
+                  tournamentId: tournamentId,
+                  joinDate: firebase.firestore.FieldValue.serverTimestamp()
+                })
+              }).then(() => {
+                // Update displayed points
+                const pointsDisplay = document.getElementById('user-points-display');
+                if (pointsDisplay) {
+                  pointsDisplay.textContent = userPoints - entryFee;
+                }
+              });
+            } else {
+              showNotification(`Not enough points to join. Need ${entryFee} points but you have ${userPoints}`, "error");
+            }
+          }
+        }).catch(error => {
+          console.error("Error checking user points:", error);
+          showNotification("Error joining tournament. Please try again.", "error");
+        });
+      });
+    });
+  }
+  
+  function filterTournaments() {
+    const statusFilter = document.getElementById('tournament-status-filter').value;
+    const prizeFilter = document.getElementById('tournament-prize-filter').value;
+    const searchTerm = document.getElementById('tournament-search').value.toLowerCase();
+    
+    const tournamentCards = document.querySelectorAll('.tournament-card');
+    let visibleCount = 0;
+    
+    tournamentCards.forEach(card => {
+      // Get tournament details
+      const title = card.querySelector('.tournament-title').textContent.toLowerCase();
+      const status = card.querySelector('.tournament-status').textContent.toLowerCase();
+      const prize = card.querySelector('.tournament-prize').textContent;
+      const prizeValue = parseInt(prize.match(/\d+/)[0], 10);
+      
+      // Check if tournament matches all filters
+      let matchesStatus = statusFilter === 'all' || 
+                         (statusFilter === 'upcoming' && (status.includes('upcoming') || status.includes('next') || status.includes('tomorrow'))) ||
+                         (statusFilter === 'ongoing' && status.includes('ongoing')) ||
+                         (statusFilter === 'completed' && status.includes('completed'));
+                         
+      let matchesPrize = prizeFilter === 'all' || 
+                        (prizeFilter === 'low' && prizeValue < 1000) ||
+                        (prizeFilter === 'medium' && prizeValue >= 1000 && prizeValue <= 3000) ||
+                        (prizeFilter === 'high' && prizeValue > 3000);
+                        
+      let matchesSearch = searchTerm === '' || title.includes(searchTerm);
+      
+      // Show or hide tournament card
+      if (matchesStatus && matchesPrize && matchesSearch) {
+        card.style.display = 'block';
+        visibleCount++;
+      } else {
+        card.style.display = 'none';
+      }
+    });
+    
+    // Update count display
+    const countDisplay = document.getElementById('tournament-count-display');
+    if (countDisplay) {
+      countDisplay.textContent = `${visibleCount} tournament${visibleCount !== 1 ? 's' : ''} found`;
+    }
   }
 
   function renderRewardsPage() {
@@ -976,10 +1174,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const user = auth.currentUser;
     if (!user) return;
 
+    // Add loading indicator while fetching data
+    mainContent.innerHTML = `
+      <div class="container text-center mt-4">
+        <div class="loader"></div>
+        <p>Loading profile...</p>
+      </div>
+    `;
+
     // Get user data from Firestore
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
         const userData = doc.data();
+
+        const joinDate = userData.joinDate ? new Date(userData.joinDate.toDate()) : new Date();
+        const memberDays = Math.floor((new Date() - joinDate) / (1000 * 60 * 60 * 24));
+        const tournamentCount = userData.tournaments?.length || 0;
 
         mainContent.innerHTML = `
           <div class="container">
@@ -988,8 +1198,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 <img src="${user.photoURL || 'https://via.placeholder.com/100'}" alt="User Avatar" class="profile-avatar">
                 <div class="profile-info">
                   <h2>${userData.displayName}</h2>
-                  <p>Member since ${userData.joinDate ? new Date(userData.joinDate.toDate()).toLocaleDateString() : 'Unknown'}</p>
-                  <p>${userData.isVIP ? '<span style="color: gold;"><i class="fas fa-crown"></i> VIP Member</span>' : 'Standard Member'}</p>
+                  <p><i class="far fa-calendar-alt"></i> Member since ${userData.joinDate ? new Date(userData.joinDate.toDate()).toLocaleDateString() : 'Unknown'} (${memberDays} days)</p>
+                  <p>${userData.isVIP ? '<span class="vip-badge"><i class="fas fa-crown"></i> VIP Member</span>' : 'Standard Member'}</p>
                 </div>
               </div>
 
@@ -1003,7 +1213,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <div class="stat-label">Tournaments Won</div>
                 </div>
                 <div class="stat-card">
-                  <div class="stat-value">0</div>
+                  <div class="stat-value">${tournamentCount}</div>
                   <div class="stat-label">Tournaments Joined</div>
                 </div>
                 <div class="stat-card">
@@ -1011,37 +1221,341 @@ document.addEventListener('DOMContentLoaded', function() {
                   <div class="stat-label">Login Streak</div>
                 </div>
               </div>
-
-              <h3 class="section-title">Your Tournament History</h3>
-              <table class="leaderboard mb-4">
-                <thead>
-                  <tr>
-                    <th>Tournament</th>
-                    <th>Date</th>
-                    <th>Placement</th>
-                    <th>Points Earned</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td colspan="4" class="text-center">No tournament history yet</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              <h3 class="section-title">Referrals</h3>
-              <div class="form-group mb-3">
-                <label class="form-label">Your Referral Link</label>
-                <div style="display: flex;">
-                  <input type="text" class="form-input" value="https://tournamenthub.com/ref/${userData.displayName}" readonly style="flex-grow: 1; margin-right: 10px;">
-                  <button class="btn btn-primary">Copy</button>
+              
+              <div class="profile-content">
+                <div class="profile-tabs">
+                  <div class="profile-tab active" data-tab="tournaments">Tournament History</div>
+                  <div class="profile-tab" data-tab="achievements">Achievements</div>
+                  <div class="profile-tab" data-tab="referrals">Referrals</div>
+                  <div class="profile-tab" data-tab="settings">Account Settings</div>
+                </div>
+                
+                <div class="profile-tab-content" id="tournaments-tab">
+                  <div class="profile-section">
+                    <h3 class="profile-section-title"><i class="fas fa-trophy"></i> Your Tournament History</h3>
+                    ${tournamentCount > 0 ? `
+                      <table class="leaderboard mb-4">
+                        <thead>
+                          <tr>
+                            <th>Tournament</th>
+                            <th>Date</th>
+                            <th>Placement</th>
+                            <th>Points Earned</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${userData.tournaments.map(tournament => `
+                            <tr>
+                              <td>Weekend Warrior Challenge</td>
+                              <td>${new Date(tournament.joinDate?.toDate() || Date.now()).toLocaleDateString()}</td>
+                              <td>TBD</td>
+                              <td>--</td>
+                            </tr>
+                          `).join('')}
+                        </tbody>
+                      </table>
+                    ` : `
+                      <div class="text-center mt-4 mb-4">
+                        <p>You haven't joined any tournaments yet.</p>
+                        <button class="btn btn-primary mt-2" id="find-tournaments-btn">Find Tournaments</button>
+                      </div>
+                    `}
+                  </div>
+                  
+                  <div class="profile-section">
+                    <h3 class="profile-section-title"><i class="fas fa-medal"></i> Upcoming Tournaments</h3>
+                    <div class="grid mt-3">
+                      <div class="tournament-card">
+                        <div class="tournament-banner">
+                          <span class="tournament-status upcoming">Upcoming</span>
+                        </div>
+                        <img src="https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80" alt="Tournament Image" class="tournament-image">
+                        <div class="tournament-details">
+                          <h3 class="tournament-title">Weekend Warrior Challenge</h3>
+                          <div class="tournament-info">
+                            <span class="tournament-date"><i class="far fa-calendar-alt"></i> Starts in 2 days</span>
+                            <span class="tournament-players"><i class="fas fa-users"></i> 64 players</span>
+                          </div>
+                          <div class="tournament-game">
+                            <span><i class="fas fa-gamepad"></i> Battle Royale</span>
+                          </div>
+                          <div class="tournament-prize">Prize: 1000 points</div>
+                          <div class="tournament-entry">
+                            <span class="entry-fee">Entry: 50 points</span>
+                            <button class="btn btn-primary tournament-join-btn" data-tournament-id="t1" data-entry-fee="50">Join Tournament</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="profile-tab-content hidden" id="achievements-tab">
+                  <div class="profile-section">
+                    <h3 class="profile-section-title"><i class="fas fa-award"></i> Your Achievements</h3>
+                    <div class="achievement-grid">
+                      <div class="achievement-card active">
+                        <div class="achievement-icon">
+                          <i class="fas fa-user-plus"></i>
+                        </div>
+                        <div class="achievement-info">
+                          <h4>New Member</h4>
+                          <p>Join Tournament Hub</p>
+                        </div>
+                      </div>
+                      
+                      <div class="achievement-card active">
+                        <div class="achievement-icon">
+                          <i class="fas fa-coins"></i>
+                        </div>
+                        <div class="achievement-info">
+                          <h4>First Points</h4>
+                          <p>Earn at least 100 points</p>
+                        </div>
+                      </div>
+                      
+                      <div class="achievement-card ${userData.rewards?.dailyLogin?.streakDays >= 7 ? 'active' : ''}">
+                        <div class="achievement-icon">
+                          <i class="fas fa-calendar-check"></i>
+                        </div>
+                        <div class="achievement-info">
+                          <h4>Dedicated Player</h4>
+                          <p>Log in for 7 days in a row</p>
+                        </div>
+                      </div>
+                      
+                      <div class="achievement-card ${tournamentCount > 0 ? 'active' : ''}">
+                        <div class="achievement-icon">
+                          <i class="fas fa-gamepad"></i>
+                        </div>
+                        <div class="achievement-info">
+                          <h4>Tournament Participant</h4>
+                          <p>Join your first tournament</p>
+                        </div>
+                      </div>
+                      
+                      <div class="achievement-card">
+                        <div class="achievement-icon">
+                          <i class="fas fa-trophy"></i>
+                        </div>
+                        <div class="achievement-info">
+                          <h4>Tournament Winner</h4>
+                          <p>Win your first tournament</p>
+                        </div>
+                      </div>
+                      
+                      <div class="achievement-card">
+                        <div class="achievement-icon">
+                          <i class="fas fa-crown"></i>
+                        </div>
+                        <div class="achievement-info">
+                          <h4>VIP Status</h4>
+                          <p>Become a VIP member</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="profile-tab-content hidden" id="referrals-tab">
+                  <div class="profile-section">
+                    <h3 class="profile-section-title"><i class="fas fa-user-plus"></i> Referrals</h3>
+                    <p class="mb-3">Invite friends to join Tournament Hub and earn 100 points for each friend who signs up using your referral link.</p>
+                    
+                    <div class="form-group mb-3">
+                      <label class="form-label">Your Referral Link</label>
+                      <div class="referral-link-container">
+                        <input type="text" id="referral-link" class="form-input" value="https://tournamenthub.com/ref/${userData.displayName}" readonly>
+                        <button class="btn btn-primary" id="copy-referral-link">Copy</button>
+                      </div>
+                    </div>
+                    
+                    <div class="referral-stats">
+                      <div class="referral-stat">
+                        <div class="referral-stat-value">${userData.referrals?.length || 0}</div>
+                        <div class="referral-stat-label">Friends Invited</div>
+                      </div>
+                      
+                      <div class="referral-stat">
+                        <div class="referral-stat-value">${(userData.referrals?.length || 0) * 100}</div>
+                        <div class="referral-stat-label">Points Earned</div>
+                      </div>
+                    </div>
+                    
+                    <div class="social-share mt-4">
+                      <p>Share your referral link:</p>
+                      <div class="social-buttons">
+                        <button class="btn btn-social btn-twitter"><i class="fab fa-twitter"></i> Twitter</button>
+                        <button class="btn btn-social btn-facebook"><i class="fab fa-facebook-f"></i> Facebook</button>
+                        <button class="btn btn-social btn-discord"><i class="fab fa-discord"></i> Discord</button>
+                        <button class="btn btn-social btn-whatsapp"><i class="fab fa-whatsapp"></i> WhatsApp</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div class="profile-tab-content hidden" id="settings-tab">
+                  <div class="profile-section">
+                    <h3 class="profile-section-title"><i class="fas fa-user-cog"></i> Account Settings</h3>
+                    
+                    <div class="form-group">
+                      <label class="form-label">Display Name</label>
+                      <input type="text" class="form-input" id="display-name" value="${userData.displayName}">
+                    </div>
+                    
+                    <div class="form-group">
+                      <label class="form-label">Email</label>
+                      <input type="email" class="form-input" value="${userData.email}" readonly>
+                    </div>
+                    
+                    <div class="form-group">
+                      <label class="form-label">Profile Picture</label>
+                      <div class="avatar-upload">
+                        <img src="${user.photoURL || 'https://via.placeholder.com/100'}" alt="User Avatar" class="profile-avatar" style="width: 80px; height: 80px;">
+                        <button class="btn btn-secondary" id="change-avatar-btn">Change Picture</button>
+                      </div>
+                    </div>
+                    
+                    <div class="form-group">
+                      <label class="form-label">Notification Settings</label>
+                      <div class="checkbox-group">
+                        <label class="checkbox-label">
+                          <input type="checkbox" checked> Email notifications for tournaments
+                        </label>
+                        <label class="checkbox-label">
+                          <input type="checkbox" checked> Email notifications for rewards
+                        </label>
+                        <label class="checkbox-label">
+                          <input type="checkbox" checked> Push notifications
+                        </label>
+                      </div>
+                    </div>
+                    
+                    <button class="btn btn-primary mt-3" id="save-settings-btn">Save Changes</button>
+                  </div>
+                  
+                  <div class="profile-section">
+                    <h3 class="profile-section-title"><i class="fas fa-shield-alt"></i> Security</h3>
+                    
+                    <button class="btn btn-secondary mb-3" id="change-password-btn">Change Password</button>
+                    
+                    <div class="form-group">
+                      <label class="form-label">Two-Factor Authentication</label>
+                      <div class="toggle-container">
+                        <label class="toggle">
+                          <input type="checkbox">
+                          <span class="toggle-slider"></span>
+                        </label>
+                        <span>Disabled</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <p>You've invited ${userData.referrals?.length || 0} friends and earned ${(userData.referrals?.length || 0) * 100} points from referrals.</p>
             </div>
           </div>
         `;
+        
+        // Setup tab switching
+        const tabs = document.querySelectorAll('.profile-tab');
+        if (tabs.length > 0) {
+          tabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+              const tabName = this.getAttribute('data-tab');
+              
+              // Hide all tab contents
+              document.querySelectorAll('.profile-tab-content').forEach(content => {
+                content.classList.add('hidden');
+              });
+              
+              // Show selected tab content
+              document.getElementById(`${tabName}-tab`).classList.remove('hidden');
+              
+              // Update active tab
+              document.querySelectorAll('.profile-tab').forEach(t => {
+                t.classList.remove('active');
+              });
+              this.classList.add('active');
+            });
+          });
+        }
+        
+        // Copy referral link button
+        const copyReferralBtn = document.getElementById('copy-referral-link');
+        if (copyReferralBtn) {
+          copyReferralBtn.addEventListener('click', function() {
+            const referralLink = document.getElementById('referral-link');
+            referralLink.select();
+            document.execCommand('copy');
+            showNotification('Referral link copied to clipboard!', 'success');
+          });
+        }
+        
+        // Find tournaments button
+        const findTournamentsBtn = document.getElementById('find-tournaments-btn');
+        if (findTournamentsBtn) {
+          findTournamentsBtn.addEventListener('click', function() {
+            renderMainContent('tournaments');
+          });
+        }
+        
+        // Save settings button
+        const saveSettingsBtn = document.getElementById('save-settings-btn');
+        if (saveSettingsBtn) {
+          saveSettingsBtn.addEventListener('click', function() {
+            const newDisplayName = document.getElementById('display-name').value.trim();
+            
+            if (newDisplayName && newDisplayName !== userData.displayName) {
+              // Update display name in Firebase Auth
+              user.updateProfile({
+                displayName: newDisplayName
+              }).then(() => {
+                // Update display name in Firestore
+                db.collection('users').doc(user.uid).update({
+                  displayName: newDisplayName
+                }).then(() => {
+                  showNotification('Profile updated successfully!', 'success');
+                }).catch(error => {
+                  console.error('Error updating profile in Firestore:', error);
+                  showNotification('Error updating profile', 'error');
+                });
+              }).catch(error => {
+                console.error('Error updating profile in Auth:', error);
+                showNotification('Error updating profile', 'error');
+              });
+            } else {
+              showNotification('Settings saved!', 'success');
+            }
+          });
+        }
+        
+        // Change avatar button
+        const changeAvatarBtn = document.getElementById('change-avatar-btn');
+        if (changeAvatarBtn) {
+          changeAvatarBtn.addEventListener('click', function() {
+            showNotification('Avatar change feature coming soon!', 'info');
+          });
+        }
+        
+        // Change password button
+        const changePasswordBtn = document.getElementById('change-password-btn');
+        if (changePasswordBtn) {
+          changePasswordBtn.addEventListener('click', function() {
+            showNotification('Password change feature coming soon!', 'info');
+          });
+        }
       }
+    }).catch(error => {
+      console.error('Error loading user data:', error);
+      mainContent.innerHTML = `
+        <div class="container">
+          <div class="alert error">
+            <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
+            <p>There was an error loading your profile data. Please try again later.</p>
+            <button class="btn btn-primary mt-3" onclick="renderMainContent('home')">Return to Home</button>
+          </div>
+        </div>
+      `;
     });
   }
 
@@ -1724,9 +2238,12 @@ document.addEventListener('DOMContentLoaded', function() {
   // Professional Authentication Modal
   function showAuthModal() {
     console.log("Show Authentication Modal");
-
+    
+    // Check if modal already exists
+    let modal = document.getElementById('authModal');
+    
     // Create modal if it doesn't exist
-    if (!document.getElementById('authModal')) {
+    if (!modal) {
       const modalHTML = `
         <div id="authModal" class="auth-modal">
           <div class="auth-modal-content">
@@ -1800,23 +2317,33 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
       `;
 
-      // Append modal to body
+      // Create and append modal to body
       const modalContainer = document.createElement('div');
       modalContainer.innerHTML = modalHTML;
       document.body.appendChild(modalContainer.firstChild);
+      
+      // Get the newly created modal
+      modal = document.getElementById('authModal');
+      
+      // Set up event listeners immediately after adding to the DOM
+      setupAuthModalEvents();
     }
 
-    // Show the modal
-    const modal = document.getElementById('authModal');
-    modal.style.display = 'flex';
-    
-    // Set up event listeners for the modal (after it's in the DOM)
-    setupAuthModalEvents();
+    // Show the modal (modal is guaranteed to exist at this point)
+    if (modal) {
+      modal.style.display = 'flex';
+    } else {
+      console.error('Failed to create auth modal');
+      showNotification("An error occurred. Please try again.", "error");
+    }
   }
 
   function setupAuthModalEvents() {
     const modal = document.getElementById('authModal');
-    if (!modal) return; // Safety check
+    if (!modal) {
+      console.error('Auth modal not found in the DOM');
+      return;
+    }
 
     // Close button functionality
     const closeButton = modal.querySelector('.auth-close');
@@ -1824,6 +2351,8 @@ document.addEventListener('DOMContentLoaded', function() {
       closeButton.addEventListener('click', () => {
         modal.style.display = 'none';
       });
+    } else {
+      console.warn('Close button not found in auth modal');
     }
 
     // Close when clicking outside modal
@@ -1835,7 +2364,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Tab switching
     const tabButtons = modal.querySelectorAll('.auth-tab-btn');
-    if (tabButtons) {
+    if (tabButtons && tabButtons.length > 0) {
       tabButtons.forEach(btn => {
         btn.addEventListener('click', () => {
           // Remove active class from all tabs and contents
@@ -1850,9 +2379,13 @@ document.addEventListener('DOMContentLoaded', function() {
           const tabContent = modal.querySelector(`#${tabName}-tab`);
           if (tabContent) {
             tabContent.classList.add('active');
+          } else {
+            console.warn(`Tab content #${tabName}-tab not found`);
           }
         });
       });
+    } else {
+      console.warn('Tab buttons not found in auth modal');
     }
 
     // Form submission for email/password login
@@ -1860,13 +2393,28 @@ document.addEventListener('DOMContentLoaded', function() {
     if (loginForm) {
       loginForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        const email = loginForm.querySelector('input[name="email"]').value;
-        const password = loginForm.querySelector('input[name="password"]').value;
+        const emailInput = loginForm.querySelector('input[name="email"]');
+        const passwordInput = loginForm.querySelector('input[name="password"]');
+        
+        if (!emailInput || !passwordInput) {
+          console.error('Email or password input not found');
+          return;
+        }
+        
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+        
+        if (!email || !password) {
+          showNotification("Please enter both email and password", "error");
+          return;
+        }
         
         // Sign in with email and password
         signInWithEmailPassword(email, password);
         modal.style.display = 'none';
       });
+    } else {
+      console.warn('Login form not found in auth modal');
     }
 
     // Form submission for email/password registration
@@ -1874,10 +2422,25 @@ document.addEventListener('DOMContentLoaded', function() {
     if (registerForm) {
       registerForm.addEventListener('submit', (e) => {
         e.preventDefault();
-        const username = registerForm.querySelector('input[name="username"]').value;
-        const email = registerForm.querySelector('input[name="email"]').value;
-        const password = registerForm.querySelector('input[name="password"]').value;
-        const confirmPassword = registerForm.querySelector('input[name="confirm-password"]').value;
+        const usernameInput = registerForm.querySelector('input[name="username"]');
+        const emailInput = registerForm.querySelector('input[name="email"]');
+        const passwordInput = registerForm.querySelector('input[name="password"]');
+        const confirmPasswordInput = registerForm.querySelector('input[name="confirm-password"]');
+        
+        if (!usernameInput || !emailInput || !passwordInput || !confirmPasswordInput) {
+          console.error('One or more registration inputs not found');
+          return;
+        }
+        
+        const username = usernameInput.value.trim();
+        const email = emailInput.value.trim();
+        const password = passwordInput.value;
+        const confirmPassword = confirmPasswordInput.value;
+        
+        if (!username || !email || !password || !confirmPassword) {
+          showNotification("Please fill in all fields", "error");
+          return;
+        }
         
         if (password !== confirmPassword) {
           showNotification("Passwords do not match!", "error");
@@ -1888,6 +2451,8 @@ document.addEventListener('DOMContentLoaded', function() {
         createUserWithEmailPassword(email, password, username);
         modal.style.display = 'none';
       });
+    } else {
+      console.warn('Register form not found in auth modal');
     }
 
     // Google sign in buttons
@@ -1897,6 +2462,8 @@ document.addEventListener('DOMContentLoaded', function() {
         signInWithGoogle();
         modal.style.display = 'none';
       });
+    } else {
+      console.warn('Google sign in button not found');
     }
 
     const googleSignUpBtn = modal.querySelector('#google-signup-btn');
@@ -1905,6 +2472,8 @@ document.addEventListener('DOMContentLoaded', function() {
         signInWithGoogle();
         modal.style.display = 'none';
       });
+    } else {
+      console.warn('Google sign up button not found');
     }
   }
   
