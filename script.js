@@ -14,10 +14,21 @@ document.addEventListener('DOMContentLoaded', function() {
     measurementId: "G-M65H20B0V5"
   };
 
-  // Initialize Firebase
+  // Initialize Firebase with offline persistence enabled
   firebase.initializeApp(firebaseConfig);
   const auth = firebase.auth();
   const db = firebase.firestore();
+  
+  // Enable offline persistence for Firestore
+  db.enablePersistence({synchronizeTabs: true})
+    .catch(err => {
+      if (err.code == 'failed-precondition') {
+        console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+      } else if (err.code == 'unimplemented') {
+        console.log('The current browser does not support offline persistence');
+      }
+    });
+    
   const storage = firebase.storage();
 
   // Initialize the app UI
@@ -330,6 +341,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (adminPanelLink && isAdmin) {
       adminPanelLink.classList.remove('hidden');
+      
+      // Add click event listener for admin panel
+      adminPanelLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        renderAdminPanel();
+      });
+    }
+
+    // Set default user data in case we're offline
+    if (userPointsDisplay) {
+      userPointsDisplay.textContent = "100"; // Default value
     }
 
     // Get and display user points
@@ -347,11 +369,22 @@ document.addEventListener('DOMContentLoaded', function() {
           }).then(() => {
             console.log('User updated with admin privileges');
             showNotification('Admin privileges granted', 'success');
+          }).catch(err => {
+            console.log('Failed to update admin status, but continuing with admin privileges');
           });
         }
+      } else if (isAdmin) {
+        // Create user document for admin if it doesn't exist yet
+        createUserDocument(user);
       }
     }).catch(err => {
       console.error('Error loading user data:', err);
+      showNotification("You're currently offline. Some features may be limited.", "warning");
+      
+      // Enable admin panel anyway if email matches admin pattern
+      if (isAdmin && adminPanelLink) {
+        adminPanelLink.classList.remove('hidden');
+      }
     });
 
     // Track daily login
@@ -516,6 +549,15 @@ document.addEventListener('DOMContentLoaded', function() {
       case 'admin':
         renderAdminPanel(); // Added admin panel rendering
         break;
+      case 'adminTournaments': 
+        renderAdminTournamentsPage();
+        break;
+      case 'adminCommunity':
+        renderAdminCommunityPage();
+        break;
+      case 'adminSettings':
+        renderAdminSettingsPage();
+        break;
       default:
         renderHomePage();
     }
@@ -571,15 +613,59 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
 
+            <!-- New Featured Tournament Banner -->
+            <div class="tournament-banner-container mb-4">
+              <div class="featured-tournament-banner">
+                <div class="featured-tournament-content">
+                  <div class="featured-tournament-header">
+                    <h2>🏆 BGMI Solo Battle – ₹5,000 Prize</h2>
+                    <div class="tournament-status-badge ongoing">🔴 Ongoing</div>
+                  </div>
+                  
+                  <div class="tournament-countdown" data-date="${new Date(Date.now() + 3*60*60*1000 + 45*60*1000 + 12*1000).toISOString()}">
+                    🕒 Starts in: 03h 45m 12s
+                  </div>
+                  
+                  <div class="tournament-details-row">
+                    <div class="game-mode">
+                      <span>🎮 Game Mode: Solo</span>
+                    </div>
+                    <div class="entry-fee">
+                      <span>Entry Fee: 50 Points</span>
+                    </div>
+                  </div>
+                  
+                  <div class="tournament-status-row">
+                    <div>✅ Status: 
+                      <span class="status-indicator ongoing">🔴 Ongoing</span> | 
+                      <span class="status-indicator upcoming">🟢 Upcoming</span> | 
+                      <span class="status-indicator completed">⚪ Completed</span>
+                    </div>
+                  </div>
+                  
+                  <button class="btn btn-gradient join-tournament-btn">Join Tournament</button>
+                </div>
+              </div>
+            </div>
+
             <h2 class="section-title">Upcoming Tournaments</h2>
             <div class="grid">
               <div class="tournament-card">
+                <div class="tournament-banner">
+                  <span class="tournament-status upcoming">Upcoming</span>
+                </div>
                 <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
                 <div class="tournament-details">
                   <h3 class="tournament-title">Weekend Warrior Challenge</h3>
+                  <div class="tournament-countdown" data-date="${new Date(Date.now() + 2*24*60*60*1000).toISOString()}">
+                    <i class="far fa-clock"></i> Starts in: 2d 0h 0m
+                  </div>
                   <div class="tournament-info">
-                    <span class="tournament-date">Starts in 2 days</span>
-                    <span class="tournament-players">64 players</span>
+                    <span class="tournament-game"><i class="fas fa-gamepad"></i> PUBG Mobile</span>
+                    <span class="tournament-players"><i class="fas fa-users"></i> 64 players</span>
+                  </div>
+                  <div class="tournament-mode">
+                    <span>Squad | TPP</span>
                   </div>
                   <div class="tournament-prize">Prize: 1000 points</div>
                   <div class="tournament-entry">
@@ -589,12 +675,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
               </div>
               <div class="tournament-card">
+                <div class="tournament-banner">
+                  <span class="tournament-status ongoing">Ongoing</span>
+                </div>
                 <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
                 <div class="tournament-details">
                   <h3 class="tournament-title">Pro Gaming League</h3>
                   <div class="tournament-info">
-                    <span class="tournament-date">Ongoing</span>
-                    <span class="tournament-players">128 players</span>
+                    <span class="tournament-game"><i class="fas fa-gamepad"></i> Free Fire</span>
+                    <span class="tournament-players"><i class="fas fa-users"></i> 128 players</span>
+                  </div>
+                  <div class="tournament-mode">
+                    <span>Duo | TPP</span>
                   </div>
                   <div class="tournament-prize">Prize: 5000 points</div>
                   <div class="tournament-entry">
@@ -604,12 +696,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
               </div>
               <div class="tournament-card">
+                <div class="tournament-banner">
+                  <span class="tournament-status today">Today</span>
+                </div>
                 <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
                 <div class="tournament-details">
                   <h3 class="tournament-title">Flash Quiz Challenge</h3>
+                  <div class="tournament-countdown" data-date="${new Date(Date.now() + 5*60*60*1000).toISOString()}">
+                    <i class="far fa-clock"></i> Starts in: 5h 0m 0s
+                  </div>
                   <div class="tournament-info">
-                    <span class="tournament-date">Today</span>
-                    <span class="tournament-players">32 players</span>
+                    <span class="tournament-game"><i class="fas fa-gamepad"></i> COD Mobile</span>
+                    <span class="tournament-players"><i class="fas fa-users"></i> 32 players</span>
+                  </div>
+                  <div class="tournament-mode">
+                    <span>Solo | FPP</span>
                   </div>
                   <div class="tournament-prize">Prize: 500 points</div>
                   <div class="tournament-entry">
@@ -646,8 +747,76 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
           </div>
         `;
+        
+        // Initialize countdown timers after rendering
+        setupTournamentCountdowns();
       }
+    }).catch(err => {
+      console.error('Error loading user data:', err);
+      // Show default homepage with sample data in case of offline
+      showDefaultHomePage(user);
     });
+  }
+  
+  // Fallback function to show homepage even when offline
+  function showDefaultHomePage(user) {
+    const mainContent = document.getElementById('main-content');
+    const displayName = user.displayName || 'User';
+    
+    mainContent.innerHTML = `
+      <div class="hero" style="background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80'); background-size: cover; padding: 5rem 2rem; text-align: center; border-radius: 0 0 var(--border-radius) var(--border-radius);">
+        <h1 style="font-size: 3rem; margin-bottom: 1.5rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">Welcome back, ${displayName}!</h1>
+        <p style="font-size: 1.4rem; margin-bottom: 2rem; max-width: 800px; margin-left: auto; margin-right: auto; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">You're currently in offline mode. Some features may be limited.</p>
+        <a href="#tournaments" class="btn btn-gradient" style="font-size: 1.1rem; padding: 0.75rem 2rem; border-radius: 50px; box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);">Explore Tournaments</a>
+      </div>
+      
+      <!-- Rest of default homepage -->
+      <!-- Featured Tournament Banner -->
+      <div class="container">
+        <div class="tournament-banner-container mb-4">
+          <div class="featured-tournament-banner">
+            <div class="featured-tournament-content">
+              <div class="featured-tournament-header">
+                <h2>🏆 BGMI Solo Battle – ₹5,000 Prize</h2>
+                <div class="tournament-status-badge ongoing">🔴 Ongoing</div>
+              </div>
+              
+              <div class="tournament-countdown" data-date="${new Date(Date.now() + 3*60*60*1000 + 45*60*1000 + 12*1000).toISOString()}">
+                🕒 Starts in: 03h 45m 12s
+              </div>
+              
+              <div class="tournament-details-row">
+                <div class="game-mode">
+                  <span>🎮 Game Mode: Solo</span>
+                </div>
+                <div class="entry-fee">
+                  <span>Entry Fee: 50 Points</span>
+                </div>
+              </div>
+              
+              <div class="tournament-status-row">
+                <div>✅ Status: 
+                  <span class="status-indicator ongoing">🔴 Ongoing</span> | 
+                  <span class="status-indicator upcoming">🟢 Upcoming</span> | 
+                  <span class="status-indicator completed">⚪ Completed</span>
+                </div>
+              </div>
+              
+              <button class="btn btn-gradient join-tournament-btn">Join Tournament</button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Sample tournament cards -->
+        <h2 class="section-title">Upcoming Tournaments</h2>
+        <div class="grid">
+          <!-- Sample tournament cards here -->
+        </div>
+      </div>
+    `;
+    
+    // Initialize countdown timers
+    setupTournamentCountdowns();
   }
 
   function renderTournamentsPage() {
@@ -1057,73 +1226,121 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderCommunityPage() {
     const mainContent = document.getElementById('main-content');
+    const user = auth.currentUser;
+    
+    // Check if user is admin
+    const isAdmin = user && user.email && (
+      user.email === 'Jitenadminpanelaccess@gmail.com' || 
+      user.email === 'karateboyjitenderprajapat@gmail.com' || 
+      user.email.endsWith('@admin.tournamenthub.com')
+    );
+    
+    // Load community messages
     mainContent.innerHTML = `
       <div class="container">
         <h2 class="section-title">Community Hub</h2>
+        <div class="community-description">
+          <div class="alert info">
+            <h3><i class="fas fa-info-circle"></i> Community Announcements</h3>
+            <p>Welcome to our community channel. This is a read-only channel where tournament admins post important announcements and updates.</p>
+          </div>
+        </div>
 
         <div class="chat-container">
           <div class="chat-sidebar">
             <div style="padding: 1rem; border-bottom: 1px solid #ddd;">
-              <h3>Chat Channels</h3>
+              <h3>Channels</h3>
             </div>
-            <ul style="list-style: none; padding: 0;">
-              <li style="padding: 0.75rem 1rem; border-bottom: 1px solid #eee; background-color: var(--primary-light); color: white;"># general</li>
-              <li style="padding: 0.75rem 1rem; border-bottom: 1px solid #eee;"># tournament-help</li>
-              <li style="padding: 0.75rem 1rem; border-bottom: 1px solid #eee;"># team-finding</li>
-              <li style="padding: 0.75rem 1rem; border-bottom: 1px solid #eee;"># strategies</li>
-              <li style="padding: 0.75rem 1rem; border-bottom: 1px solid #eee;"># off-topic</li>
+            <ul class="channel-list">
+              <li class="channel-item active" data-channel="announcements">
+                <i class="fas fa-bullhorn"></i> Announcements
+                <span class="admin-only-badge">Admin Only</span>
+              </li>
+              <li class="channel-item" data-channel="tournaments">
+                <i class="fas fa-trophy"></i> Tournament Updates
+                <span class="admin-only-badge">Admin Only</span>
+              </li>
+              <li class="channel-item" data-channel="events">
+                <i class="fas fa-calendar-check"></i> Upcoming Events
+                <span class="admin-only-badge">Admin Only</span>
+              </li>
+              <li class="channel-item" data-channel="rules">
+                <i class="fas fa-gavel"></i> Rules & Guidelines
+                <span class="admin-only-badge">Admin Only</span>
+              </li>
             </ul>
+            
+            <div class="viewer-count">
+              <i class="fas fa-eye"></i> <span id="viewer-count">124</span> viewers online
+            </div>
           </div>
+          
           <div class="chat-main">
             <div class="chat-header">
-              <h3># general</h3>
+              <div>
+                <h3><i class="fas fa-bullhorn"></i> Announcements</h3>
+                <span class="channel-description">Official announcements from the Tournament Hub team</span>
+              </div>
+              ${isAdmin ? `<button id="refresh-messages" class="btn btn-sm btn-secondary"><i class="fas fa-sync-alt"></i> Refresh</button>` : ''}
             </div>
-            <div class="chat-messages">
-              <div class="message">
-                <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
+            
+            <div class="chat-messages" id="community-messages">
+              <div class="message admin-message">
+                <img src="https://via.placeholder.com/40" alt="Admin Avatar" class="message-avatar">
                 <div class="message-content">
-                  <div class="message-sender">TournamentMaster</div>
-                  <div class="message-text">Welcome to the community chat! This is where you can discuss tournaments, find teammates, and share strategies.</div>
+                  <div class="message-sender">Tournament Admin <span class="admin-badge">ADMIN</span></div>
+                  <div class="message-text">Welcome to the official Tournament Hub Community! This channel is for important announcements only. Stay tuned for tournament updates, events, and more!</div>
                   <div class="message-time">2 hours ago</div>
+                  <div class="message-views"><i class="fas fa-eye"></i> 253 views</div>
                 </div>
               </div>
-              <div class="message">
-                <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
+              
+              <div class="message admin-message">
+                <img src="https://via.placeholder.com/40" alt="Admin Avatar" class="message-avatar">
                 <div class="message-content">
-                  <div class="message-sender">GamePro99</div>
-                  <div class="message-text">Anyone joining the Weekend Warrior Challenge? Looking for teammates!</div>
+                  <div class="message-sender">Tournament Admin <span class="admin-badge">ADMIN</span></div>
+                  <div class="message-text">🏆 New Tournament Alert! 🏆<br><br>The BGMI Solo Battle tournament registration is now OPEN! Prize pool of ₹5,000.<br><br>📅 Starts: Tomorrow at 6:00 PM<br>🎮 Mode: Solo TPP<br>💰 Entry: 50 Points<br><br>Register now from the Tournaments page!</div>
                   <div class="message-time">45 minutes ago</div>
+                  <div class="message-views"><i class="fas fa-eye"></i> 187 views</div>
                 </div>
               </div>
-              <div class="message">
-                <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
+              
+              <div class="message admin-message">
+                <img src="https://via.placeholder.com/40" alt="Admin Avatar" class="message-avatar">
                 <div class="message-content">
-                  <div class="message-sender">StrategyGuru</div>
-                  <div class="message-text">I'll join! I've won it twice before. Add me to your team.</div>
+                  <div class="message-sender">Tournament Admin <span class="admin-badge">ADMIN</span></div>
+                  <div class="message-text">⚠️ Server Maintenance ⚠️<br><br>We will be performing server maintenance tomorrow from 3:00 AM to 5:00 AM (UTC). During this time, the website may be temporarily unavailable.<br><br>Thank you for your understanding!</div>
                   <div class="message-time">30 minutes ago</div>
+                  <div class="message-views"><i class="fas fa-eye"></i> 142 views</div>
                 </div>
               </div>
-              <div class="message">
-                <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
+              
+              <div class="message admin-message pinned">
+                <img src="https://via.placeholder.com/40" alt="Admin Avatar" class="message-avatar">
                 <div class="message-content">
-                  <div class="message-sender">NewPlayer123</div>
-                  <div class="message-text">How many points do you typically need to win the Flash Quiz Challenge?</div>
+                  <div class="message-sender">Tournament Admin <span class="admin-badge">ADMIN</span> <span class="pinned-badge"><i class="fas fa-thumbtack"></i> PINNED</span></div>
+                  <div class="message-text">📢 IMPORTANT: New Rules for Tournament Registration 📢<br><br>1. Players must be at least level 10 to join competitive tournaments<br>2. A valid mobile number is required for prize verification<br>3. Team members must be registered at least 2 hours before tournament start time<br><br>Read the complete rules in the Rules & Guidelines section.</div>
                   <div class="message-time">15 minutes ago</div>
-                </div>
-              </div>
-              <div class="message">
-                <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
-                <div class="message-content">
-                  <div class="message-sender">QuizChampion</div>
-                  <div class="message-text">Usually around 2000-2500 points to win first place. It's all about speed and accuracy!</div>
-                  <div class="message-time">5 minutes ago</div>
+                  <div class="message-views"><i class="fas fa-eye"></i> 98 views</div>
                 </div>
               </div>
             </div>
+            
+            ${isAdmin ? `
             <div class="chat-input">
-              <input type="text" placeholder="Type your message...">
-              <button class="btn btn-primary">Send</button>
+              <textarea id="admin-message" placeholder="Type your announcement message..." rows="3"></textarea>
+              <div class="message-options">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="pin-message"> Pin this message
+                </label>
+                <button id="send-admin-message" class="btn btn-primary"><i class="fas fa-paper-plane"></i> Post Announcement</button>
+              </div>
             </div>
+            ` : `
+            <div class="read-only-notice">
+              <i class="fas fa-lock"></i> This is a read-only channel. Only administrators can post messages.
+            </div>
+            `}
           </div>
         </div>
 
@@ -1174,6 +1391,114 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
       </div>
     `;
+    
+    // Add event listeners for the community page
+    if (isAdmin) {
+      // Add event listener for sending admin messages
+      const sendButton = document.getElementById('send-admin-message');
+      if (sendButton) {
+        sendButton.addEventListener('click', function() {
+          const messageText = document.getElementById('admin-message').value.trim();
+          const isPinned = document.getElementById('pin-message').checked;
+          
+          if (messageText) {
+            // Add message to Firestore
+            db.collection('communityMessages').add({
+              text: messageText,
+              sender: user.displayName || 'Tournament Admin',
+              senderUid: user.uid,
+              timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+              isPinned: isPinned,
+              views: 0,
+              viewers: []
+            }).then(() => {
+              document.getElementById('admin-message').value = '';
+              document.getElementById('pin-message').checked = false;
+              showNotification('Message posted successfully', 'success');
+              
+              // Add message to UI immediately
+              const messagesContainer = document.getElementById('community-messages');
+              const newMessage = document.createElement('div');
+              newMessage.className = `message admin-message ${isPinned ? 'pinned' : ''}`;
+              newMessage.innerHTML = `
+                <img src="${user.photoURL || 'https://via.placeholder.com/40'}" alt="Admin Avatar" class="message-avatar">
+                <div class="message-content">
+                  <div class="message-sender">${user.displayName || 'Tournament Admin'} <span class="admin-badge">ADMIN</span> ${isPinned ? '<span class="pinned-badge"><i class="fas fa-thumbtack"></i> PINNED</span>' : ''}</div>
+                  <div class="message-text">${messageText.replace(/\n/g, '<br>')}</div>
+                  <div class="message-time">Just now</div>
+                  <div class="message-views"><i class="fas fa-eye"></i> 0 views</div>
+                </div>
+              `;
+              messagesContainer.appendChild(newMessage);
+              
+              // Scroll to bottom
+              messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }).catch(err => {
+              console.error('Error posting message:', err);
+              showNotification('Failed to post message. Please try again.', 'error');
+            });
+          } else {
+            showNotification('Please enter a message', 'warning');
+          }
+        });
+      }
+      
+      // Add event listener for refreshing messages
+      const refreshButton = document.getElementById('refresh-messages');
+      if (refreshButton) {
+        refreshButton.addEventListener('click', function() {
+          loadCommunityMessages();
+        });
+      }
+    }
+    
+    // Handle channel switching
+    const channelItems = document.querySelectorAll('.channel-item');
+    channelItems.forEach(item => {
+      item.addEventListener('click', function() {
+        // Remove active class from all channels
+        channelItems.forEach(ch => ch.classList.remove('active'));
+        
+        // Add active class to clicked channel
+        this.classList.add('active');
+        
+        // Update channel header
+        const channelName = this.getAttribute('data-channel');
+        const channelIcon = this.querySelector('i').className;
+        const channelHeader = document.querySelector('.chat-header h3');
+        if (channelHeader) {
+          channelHeader.innerHTML = `<i class="${channelIcon}"></i> ${channelName.charAt(0).toUpperCase() + channelName.slice(1)}`;
+        }
+        
+        // In a real app, you would load messages for this channel
+        // For now, we'll just show a loading message
+        if (isAdmin) {
+          showNotification(`Switched to ${channelName} channel`, 'info');
+        }
+      });
+    });
+    
+    // Function to load community messages from Firestore
+    function loadCommunityMessages() {
+      const messagesContainer = document.getElementById('community-messages');
+      if (messagesContainer) {
+        messagesContainer.innerHTML = `
+          <div class="text-center mt-4 mb-4">
+            <div class="loader"></div>
+            <p>Loading messages...</p>
+          </div>
+        `;
+        
+        // In a real app, you would load messages from Firestore here
+        // For the demo, we'll just simulate a loading delay
+        setTimeout(() => {
+          // Simulate loading messages
+          showNotification('Messages refreshed', 'success');
+          // Restore the original messages for this demo
+          renderCommunityPage();
+        }, 1000);
+      }
+    }
   }
 
   function renderProfilePage() {
@@ -1575,6 +1900,14 @@ document.addEventListener('DOMContentLoaded', function() {
       showNotification("An error occurred. Please refresh the page.", "error");
       return;
     }
+
+    // Show loading state
+    mainContent.innerHTML = `
+      <div class="container text-center">
+        <div class="loader"></div>
+        <p>Loading admin panel...</p>
+      </div>
+    `;
 
     // Check if current user is admin
     const user = auth.currentUser;
@@ -2060,7 +2393,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="admin-header">
               <h1 class="admin-title">Tournament Management</h1>
               <div class="admin-actions">
-                <button class="btn btn-primary">
+                <button class="btn btn-primary" id="create-tournament-btn">
                   <i class="fas fa-plus"></i> Create Tournament
                 </button>
               </div>
@@ -2082,7 +2415,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <tr>
                     <th>Name</th>
                     <th>Start Date</th>
-                    <th>End Date</th>
+                    <th>Game</th>
                     <th>Entry Fee</th>
                     <th>Prize Pool</th>
                     <th>Participants</th>
@@ -2092,10 +2425,141 @@ document.addEventListener('DOMContentLoaded', function() {
                 </thead>
                 <tbody>
                   <tr>
-                    <td colspan="8" class="text-center">No tournaments found</td>
+                    <td>BGMI Solo Battle</td>
+                    <td>08/10/2025</td>
+                    <td>BGMI</td>
+                    <td>50 points</td>
+                    <td>₹5,000</td>
+                    <td>56/100</td>
+                    <td><span class="status-badge upcoming">Upcoming</span></td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="t1">
+                          <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-secondary view-players" data-tournament-id="t1">
+                          <i class="fas fa-users"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="t1">
+                          <i class="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Free Fire Duo Challenge</td>
+                    <td>08/05/2025</td>
+                    <td>Free Fire</td>
+                    <td>75 points</td>
+                    <td>₹3,000</td>
+                    <td>48/64</td>
+                    <td><span class="status-badge ongoing">Ongoing</span></td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="t2">
+                          <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-secondary view-players" data-tournament-id="t2">
+                          <i class="fas fa-users"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="t2">
+                          <i class="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>COD Mobile Sniper War</td>
+                    <td>07/28/2025</td>
+                    <td>COD Mobile</td>
+                    <td>100 points</td>
+                    <td>₹7,500</td>
+                    <td>32/32</td>
+                    <td><span class="status-badge completed">Completed</span></td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="t3">
+                          <i class="fas fa-edit"></i>
+                        </button>
+                        <button class="btn btn-sm btn-secondary view-players" data-tournament-id="t3">
+                          <i class="fas fa-users"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="t3">
+                          <i class="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 </tbody>
               </table>
+            </div>
+            
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h2>Tournament Registration Controls</h2>
+              </div>
+              <div class="tournament-controls">
+                <div class="control-section">
+                  <h3>Registration Limits</h3>
+                  <div class="control-group">
+                    <label class="form-label">Max players per tournament</label>
+                    <input type="number" class="form-input" value="100" min="1" max="1000">
+                  </div>
+                  <div class="control-group">
+                    <label class="form-label">Default entry fee (points)</label>
+                    <input type="number" class="form-input" value="50" min="0">
+                  </div>
+                </div>
+                
+                <div class="control-section">
+                  <h3>Registration Status</h3>
+                  <div class="control-group">
+                    <label class="toggle-switch">
+                      <input type="checkbox" checked>
+                      <span class="toggle-slider"></span>
+                      Allow tournament registrations
+                    </label>
+                  </div>
+                  <div class="control-group">
+                    <label class="toggle-switch">
+                      <input type="checkbox" checked>
+                      <span class="toggle-slider"></span>
+                      Allow team registrations
+                    </label>
+                  </div>
+                  <div class="control-group">
+                    <label class="toggle-switch">
+                      <input type="checkbox" checked>
+                      <span class="toggle-slider"></span>
+                      Auto-close registrations when full
+                    </label>
+                  </div>
+                </div>
+                
+                <div class="control-section">
+                  <h3>Verification Requirements</h3>
+                  <div class="control-group">
+                    <label class="toggle-switch">
+                      <input type="checkbox" checked>
+                      <span class="toggle-slider"></span>
+                      Require email verification
+                    </label>
+                  </div>
+                  <div class="control-group">
+                    <label class="toggle-switch">
+                      <input type="checkbox">
+                      <span class="toggle-slider"></span>
+                      Require mobile verification
+                    </label>
+                  </div>
+                </div>
+              </div>
+              
+              <div class="mt-3">
+                <button class="btn btn-primary" id="save-tournament-settings">
+                  <i class="fas fa-save"></i> Save Settings
+                </button>
+              </div>
             </div>
           </div>
         `;
@@ -2164,6 +2628,161 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         `;
         break;
+      
+      case 'community':
+        pageHTML = `
+          <div id="admin-community-page">
+            <div class="admin-header">
+              <h1 class="admin-title">Community Management</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary" id="refresh-community-stats">
+                  <i class="fas fa-sync-alt"></i> Refresh Stats
+                </button>
+              </div>
+            </div>
+
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h2>Announcement Management</h2>
+              </div>
+              
+              <div class="announcement-form mb-4">
+                <div class="form-group">
+                  <label class="form-label">New Announcement</label>
+                  <textarea class="form-input" id="announcement-text" rows="4" placeholder="Type your announcement here..."></textarea>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Channel</label>
+                  <select class="form-input" id="announcement-channel">
+                    <option value="announcements">Announcements</option>
+                    <option value="tournaments">Tournament Updates</option>
+                    <option value="events">Upcoming Events</option>
+                    <option value="rules">Rules & Guidelines</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="checkbox-label">
+                    <input type="checkbox" id="announcement-pin"> Pin this announcement
+                  </label>
+                </div>
+                <button class="btn btn-primary" id="post-announcement">
+                  <i class="fas fa-paper-plane"></i> Post Announcement
+                </button>
+              </div>
+              
+              <div class="admin-card-header">
+                <h2>Recent Announcements</h2>
+              </div>
+              
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Channel</th>
+                    <th>Message</th>
+                    <th>Date</th>
+                    <th>Views</th>
+                    <th>Pinned</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Announcements</td>
+                    <td>Welcome to the official Tournament Hub Community!</td>
+                    <td>Today, 10:30 AM</td>
+                    <td>253</td>
+                    <td><i class="fas fa-thumbtack text-success"></i></td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-secondary" data-message-id="1">
+                          <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" data-message-id="1">
+                          <i class="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Tournament Updates</td>
+                    <td>New Tournament Alert! The BGMI Solo Battle tournament registration is now OPEN!</td>
+                    <td>Today, 09:15 AM</td>
+                    <td>187</td>
+                    <td><i class="fas fa-times text-secondary"></i></td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-secondary" data-message-id="2">
+                          <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" data-message-id="2">
+                          <i class="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Announcements</td>
+                    <td>Server Maintenance Notice</td>
+                    <td>Yesterday, 3:45 PM</td>
+                    <td>142</td>
+                    <td><i class="fas fa-times text-secondary"></i></td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-secondary" data-message-id="3">
+                          <i class="fas fa-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-danger" data-message-id="3">
+                          <i class="fas fa-trash"></i>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h2>Viewer Analytics</h2>
+              </div>
+              
+              <div class="viewer-stats">
+                <div class="stats-grid">
+                  <div class="stat-box">
+                    <i class="fas fa-users"></i>
+                    <div class="value">124</div>
+                    <div class="label">Current Viewers</div>
+                  </div>
+                  <div class="stat-box">
+                    <i class="fas fa-eye"></i>
+                    <div class="value">587</div>
+                    <div class="label">Today's Views</div>
+                  </div>
+                  <div class="stat-box">
+                    <i class="fas fa-chart-line"></i>
+                    <div class="value">12,458</div>
+                    <div class="label">Total Views</div>
+                  </div>
+                  <div class="stat-box">
+                    <i class="fas fa-bullhorn"></i>
+                    <div class="value">37</div>
+                    <div class="label">Announcements</div>
+                  </div>
+                </div>
+                
+                <div class="viewer-chart-container mt-4">
+                  <h3>Viewer Activity (Last 7 Days)</h3>
+                  <div class="viewer-chart">
+                    <div class="chart-placeholder">
+                      <p>Chart visualization would appear here (not implemented in this demo)</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+        break;
 
       case 'ads':
         pageHTML = `
@@ -2204,23 +2823,31 @@ document.addEventListener('DOMContentLoaded', function() {
         pageHTML = `
           <div id="admin-settings-page">
             <div class="admin-header">
-              <h1 class="admin-title">Settings</h1>
+              <h1 class="admin-title">Website Settings</h1>
               <div class="admin-actions">
-                <button class="btn btn-primary">
+                <button class="btn btn-primary" id="save-settings-btn">
                   <i class="fas fa-save"></i> Save All Settings
                 </button>
               </div>
             </div>
 
             <div class="admin-card">
-              <h2>Website Settings</h2>
+              <h2>Basic Settings</h2>
               <div class="form-group">
                 <label class="form-label">Site Name</label>
-                <input type="text" class="form-input" value="Tournament Hub">
+                <input type="text" class="form-input" id="site-name" value="Tournament Hub">
               </div>
               <div class="form-group">
                 <label class="form-label">Site Description</label>
-                <textarea class="form-input" rows="3">Join tournaments, earn rewards, and compete with players worldwide.</textarea>
+                <textarea class="form-input" id="site-description" rows="3">Join tournaments, earn rewards, and compete with players worldwide.</textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Contact Email</label>
+                <input type="email" class="form-input" id="contact-email" value="contact@tournamenthub.com">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Support Phone</label>
+                <input type="text" class="form-input" id="support-phone" value="+91 9876543210">
               </div>
             </div>
 
@@ -2234,7 +2861,92 @@ document.addEventListener('DOMContentLoaded', function() {
                 <label class="form-label">Change Admin Password</label>
                 <input type="password" class="form-input" placeholder="Enter new password">
               </div>
-              <button class="btn btn-primary">Update Admin Settings</button>
+              <div class="form-group">
+                <label class="form-label">Secondary Admin Emails</label>
+                <textarea class="form-input" rows="2" placeholder="Enter one email per line">karateboyjitenderprajapat@gmail.com</textarea>
+                <small class="form-helper">These users will also have admin privileges.</small>
+              </div>
+              <button class="btn btn-primary" id="update-admin-settings">Update Admin Settings</button>
+            </div>
+            
+            <div class="admin-card">
+              <h2>Site Features</h2>
+              <div class="feature-toggles">
+                <div class="toggle-group">
+                  <label class="toggle-switch">
+                    <input type="checkbox" checked id="tournaments-enabled">
+                    <span class="toggle-slider"></span>
+                    Enable Tournaments
+                  </label>
+                  <p class="toggle-description">Allow users to view and join tournaments</p>
+                </div>
+                
+                <div class="toggle-group">
+                  <label class="toggle-switch">
+                    <input type="checkbox" checked id="community-enabled">
+                    <span class="toggle-slider"></span>
+                    Enable Community
+                  </label>
+                  <p class="toggle-description">Show the community announcements section</p>
+                </div>
+                
+                <div class="toggle-group">
+                  <label class="toggle-switch">
+                    <input type="checkbox" checked id="rewards-enabled">
+                    <span class="toggle-slider"></span>
+                    Enable Rewards System
+                  </label>
+                  <p class="toggle-description">Allow users to earn and spend points</p>
+                </div>
+                
+                <div class="toggle-group">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="maintenance-mode">
+                    <span class="toggle-slider"></span>
+                    Maintenance Mode
+                  </label>
+                  <p class="toggle-description">Only admins can access the site when enabled</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="admin-card">
+              <h2>Authentication Settings</h2>
+              <div class="feature-toggles">
+                <div class="toggle-group">
+                  <label class="toggle-switch">
+                    <input type="checkbox" checked id="google-auth-enabled">
+                    <span class="toggle-slider"></span>
+                    Google Sign-in
+                  </label>
+                </div>
+                
+                <div class="toggle-group">
+                  <label class="toggle-switch">
+                    <input type="checkbox" checked id="email-auth-enabled">
+                    <span class="toggle-slider"></span>
+                    Email/Password Sign-in
+                  </label>
+                </div>
+                
+                <div class="toggle-group">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="guest-mode-enabled">
+                    <span class="toggle-slider"></span>
+                    Allow Guest Mode
+                  </label>
+                  <p class="toggle-description">Let users browse without signing in</p>
+                </div>
+              </div>
+            </div>
+            
+            <div class="admin-actions-bottom">
+              <button class="btn btn-danger" id="reset-settings">
+                <i class="fas fa-undo"></i> Reset to Defaults
+              </button>
+              <button class="btn btn-primary" id="save-settings-btn-bottom">
+                <i class="fas fa-save"></i> Save All Settings
+              </button>
             </div>
           </div>
         `;
@@ -2834,6 +3546,11 @@ document.addEventListener('DOMContentLoaded', function() {
       // Set a small timeout to ensure the tournament page has been rendered
       setTimeout(enhanceExistingTournamentCards, 300);
     });
+  }
+  
+  // Initialize tournament countdowns on home page if user is already logged in
+  if (firebase.auth().currentUser) {
+    setTimeout(setupTournamentCountdowns, 1000);
   }
 });
 
