@@ -146,8 +146,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function createUserDocument(user) {
-    // Check if user email is admin
-    const isAdmin = user.email && (user.email === 'admin@example.com' || user.email.endsWith('@admin.tournamenthub.com'));
+    // Check if user email is admin - specific admin email
+    const isAdmin = user.email && (user.email === 'Jitenadminpanelaccess@gmail.com' || user.email.endsWith('@admin.tournamenthub.com'));
 
     db.collection('users').doc(user.uid).set({
       uid: user.uid,
@@ -914,18 +914,592 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderAdminPanel() {
     const mainContent = document.getElementById('main-content');
-    mainContent.innerHTML = `
-      <div class="container">
-        <h1>Admin Panel</h1>
-        <p>This is the admin panel. You can manage users, tournaments, and rewards here.</p>
-      </div>
-    `;
+    
+    // Check if current user is admin
+    const user = auth.currentUser;
+    if (!user) return;
+    
+    // Get user data to verify admin status
+    db.collection('users').doc(user.uid).get().then((doc) => {
+      if (doc.exists) {
+        const userData = doc.data();
+        
+        // Verify admin status - only specific email can access
+        if (userData.isAdmin || user.email === 'Jitenadminpanelaccess@gmail.com') {
+          // Set admin flag if not already set
+          if (!userData.isAdmin) {
+            db.collection('users').doc(user.uid).update({
+              isAdmin: true
+            });
+          }
+          
+          // Render admin panel
+          mainContent.innerHTML = `
+            <div class="admin-layout">
+              <div class="admin-sidebar">
+                <div class="admin-logo">
+                  <i class="fas fa-trophy"></i> Admin Panel
+                </div>
+                <ul class="admin-nav">
+                  <li class="admin-nav-item">
+                    <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
+                      <i class="fas fa-tachometer-alt"></i> Dashboard
+                    </a>
+                  </li>
+                  <li class="admin-nav-item">
+                    <a href="#" class="admin-nav-link" data-admin-page="users">
+                      <i class="fas fa-users"></i> User Management
+                    </a>
+                  </li>
+                  <li class="admin-nav-item">
+                    <a href="#" class="admin-nav-link" data-admin-page="tournaments">
+                      <i class="fas fa-trophy"></i> Tournament Management
+                    </a>
+                  </li>
+                  <li class="admin-nav-item">
+                    <a href="#" class="admin-nav-link" data-admin-page="rewards">
+                      <i class="fas fa-gift"></i> Rewards & Earnings
+                    </a>
+                  </li>
+                  <li class="admin-nav-item">
+                    <a href="#" class="admin-nav-link" data-admin-page="ads">
+                      <i class="fas fa-ad"></i> Ad Management
+                    </a>
+                  </li>
+                  <li class="admin-nav-item">
+                    <a href="#" class="admin-nav-link" data-admin-page="settings">
+                      <i class="fas fa-cog"></i> Settings
+                    </a>
+                  </li>
+                </ul>
+              </div>
+              <div class="admin-content">
+                <div id="admin-dashboard-page">
+                  <div class="admin-header">
+                    <h1 class="admin-title">Dashboard</h1>
+                    <div class="admin-actions">
+                      <button class="btn btn-primary">
+                        <i class="fas fa-sync-alt"></i> Refresh Data
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div class="stats-grid mb-4">
+                    <div class="stat-box">
+                      <i class="fas fa-users"></i>
+                      <div class="value">0</div>
+                      <div class="label">Total Users</div>
+                    </div>
+                    <div class="stat-box">
+                      <i class="fas fa-trophy"></i>
+                      <div class="value">0</div>
+                      <div class="label">Active Tournaments</div>
+                    </div>
+                    <div class="stat-box">
+                      <i class="fas fa-coins"></i>
+                      <div class="value">0</div>
+                      <div class="label">Points Distributed</div>
+                    </div>
+                    <div class="stat-box">
+                      <i class="fas fa-user-plus"></i>
+                      <div class="value">0</div>
+                      <div class="label">New Users (Today)</div>
+                    </div>
+                  </div>
+                  
+                  <div class="admin-card">
+                    <h2>Recent Users</h2>
+                    <table class="admin-table">
+                      <thead>
+                        <tr>
+                          <th>User</th>
+                          <th>Join Date</th>
+                          <th>Points</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td colspan="5" class="text-center">No users found</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  <div class="admin-card">
+                    <h2>Upcoming Tournaments</h2>
+                    <table class="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Tournament</th>
+                          <th>Start Date</th>
+                          <th>Entry Fee</th>
+                          <th>Prize Pool</th>
+                          <th>Participants</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td colspan="6" class="text-center">No tournaments found</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+          
+          // Setup admin panel event listeners
+          setupAdminPanelEvents();
+        } else {
+          // Not an admin
+          mainContent.innerHTML = `
+            <div class="container">
+              <div class="alert error">
+                <h3><i class="fas fa-exclamation-triangle"></i> Access Denied</h3>
+                <p>You do not have permission to access the admin panel.</p>
+                <p>Please contact the site administrator if you believe this is an error.</p>
+              </div>
+            </div>
+          `;
+        }
+      }
+    });
+  }
+  
+  function setupAdminPanelEvents() {
+    // Admin navigation
+    document.querySelectorAll('.admin-nav-link').forEach(link => {
+      link.addEventListener('click', function(e) {
+        e.preventDefault();
+        
+        // Remove active class from all links
+        document.querySelectorAll('.admin-nav-link').forEach(l => {
+          l.classList.remove('active');
+        });
+        
+        // Add active class to clicked link
+        this.classList.add('active');
+        
+        // Get page to display
+        const page = this.getAttribute('data-admin-page');
+        showAdminPage(page);
+      });
+    });
+  }
+  
+  function showAdminPage(page) {
+    // Hide all admin pages
+    ['dashboard', 'users', 'tournaments', 'rewards', 'ads', 'settings'].forEach(p => {
+      const pageElement = document.getElementById(`admin-${p}-page`);
+      if (pageElement) {
+        pageElement.style.display = 'none';
+      }
+    });
+    
+    // Show selected page
+    const selectedPage = document.getElementById(`admin-${page}-page`);
+    if (selectedPage) {
+      selectedPage.style.display = 'block';
+    } else {
+      // Create the page if it doesn't exist
+      createAdminPage(page);
+    }
+  }
+  
+  function createAdminPage(page) {
+    const adminContent = document.querySelector('.admin-content');
+    let pageHTML = '';
+    
+    switch (page) {
+      case 'users':
+        pageHTML = `
+          <div id="admin-users-page">
+            <div class="admin-header">
+              <h1 class="admin-title">User Management</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary">
+                  <i class="fas fa-user-plus"></i> Add User
+                </button>
+              </div>
+            </div>
+            
+            <div class="admin-card">
+              <div class="admin-filters mb-3">
+                <input type="text" class="form-input" placeholder="Search users..." style="width: 300px;">
+                <select class="form-input ml-2">
+                  <option value="all">All Users</option>
+                  <option value="vip">VIP Users</option>
+                  <option value="standard">Standard Users</option>
+                  <option value="banned">Banned Users</option>
+                </select>
+              </div>
+              
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>User ID</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Points</th>
+                    <th>VIP Status</th>
+                    <th>Join Date</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="7" class="text-center">No users found</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+        break;
+        
+      case 'tournaments':
+        pageHTML = `
+          <div id="admin-tournaments-page">
+            <div class="admin-header">
+              <h1 class="admin-title">Tournament Management</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary">
+                  <i class="fas fa-plus"></i> Create Tournament
+                </button>
+              </div>
+            </div>
+            
+            <div class="admin-card">
+              <div class="admin-filters mb-3">
+                <input type="text" class="form-input" placeholder="Search tournaments..." style="width: 300px;">
+                <select class="form-input ml-2">
+                  <option value="all">All Tournaments</option>
+                  <option value="upcoming">Upcoming</option>
+                  <option value="ongoing">Ongoing</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Start Date</th>
+                    <th>End Date</th>
+                    <th>Entry Fee</th>
+                    <th>Prize Pool</th>
+                    <th>Participants</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td colspan="8" class="text-center">No tournaments found</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+        break;
+        
+      case 'rewards':
+        pageHTML = `
+          <div id="admin-rewards-page">
+            <div class="admin-header">
+              <h1 class="admin-title">Rewards & Earnings</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary">
+                  <i class="fas fa-plus"></i> Create Reward
+                </button>
+              </div>
+            </div>
+            
+            <div class="admin-card">
+              <h2>Daily Rewards</h2>
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Reward Type</th>
+                    <th>Points Value</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Daily Login</td>
+                    <td>10-60 points</td>
+                    <td>Active</td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-primary">Edit</button>
+                        <button class="btn btn-sm btn-danger">Disable</button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Watch Ads</td>
+                    <td>20 points</td>
+                    <td>Active</td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-primary">Edit</button>
+                        <button class="btn btn-sm btn-danger">Disable</button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>Referral Bonus</td>
+                    <td>100 points</td>
+                    <td>Active</td>
+                    <td>
+                      <div class="table-actions">
+                        <button class="btn btn-sm btn-primary">Edit</button>
+                        <button class="btn btn-sm btn-danger">Disable</button>
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        `;
+        break;
+        
+      case 'ads':
+        pageHTML = `
+          <div id="admin-ads-page">
+            <div class="admin-header">
+              <h1 class="admin-title">Ad Management</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary">
+                  <i class="fas fa-plus"></i> Add Ad Unit
+                </button>
+              </div>
+            </div>
+            
+            <div class="admin-card">
+              <h2>Ad Settings</h2>
+              <div class="form-group">
+                <label class="form-label">Google AdSense Publisher ID</label>
+                <input type="text" class="form-input" placeholder="pub-xxxxxxxxxxxxxxxx">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Watch Ads & Earn Feature</label>
+                <div>
+                  <label>
+                    <input type="radio" name="ads-earn" checked> Enabled
+                  </label>
+                  <label style="margin-left: 20px;">
+                    <input type="radio" name="ads-earn"> Disabled
+                  </label>
+                </div>
+              </div>
+              <button class="btn btn-primary">Save Settings</button>
+            </div>
+          </div>
+        `;
+        break;
+        
+      case 'settings':
+        pageHTML = `
+          <div id="admin-settings-page">
+            <div class="admin-header">
+              <h1 class="admin-title">Settings</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary">
+                  <i class="fas fa-save"></i> Save All Settings
+                </button>
+              </div>
+            </div>
+            
+            <div class="admin-card">
+              <h2>Website Settings</h2>
+              <div class="form-group">
+                <label class="form-label">Site Name</label>
+                <input type="text" class="form-input" value="Tournament Hub">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Site Description</label>
+                <textarea class="form-input" rows="3">Join tournaments, earn rewards, and compete with players worldwide.</textarea>
+              </div>
+            </div>
+            
+            <div class="admin-card">
+              <h2>Administrator Settings</h2>
+              <div class="form-group">
+                <label class="form-label">Admin Email</label>
+                <input type="email" class="form-input" value="Jitenadminpanelaccess@gmail.com" readonly>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Change Admin Password</label>
+                <input type="password" class="form-input" placeholder="Enter new password">
+              </div>
+              <button class="btn btn-primary">Update Admin Settings</button>
+            </div>
+          </div>
+        `;
+        break;
+        
+      default:
+        pageHTML = `
+          <div id="admin-${page}-page">
+            <h1>Page Not Found</h1>
+            <p>The requested admin page does not exist.</p>
+          </div>
+        `;
+    }
+    
+    adminContent.innerHTML += pageHTML;
   }
 
-  // Placeholder for showAuthModal function (needs implementation)
+  // Professional Authentication Modal
   function showAuthModal() {
-    // Implement your authentication modal logic here.  This is a placeholder.
     console.log("Show Authentication Modal");
-    signInWithGoogle(); //For now, this still calls the Google Sign-In
+    
+    // Create modal if it doesn't exist
+    if (!document.getElementById('authModal')) {
+      const modalHTML = `
+        <div id="authModal" class="auth-modal">
+          <div class="auth-modal-content">
+            <div class="auth-modal-header">
+              <h2><i class="fas fa-trophy"></i> Tournament Hub</h2>
+              <span class="auth-close">&times;</span>
+            </div>
+            <div class="auth-modal-body">
+              <div class="auth-tabs">
+                <button class="auth-tab-btn active" data-tab="login">Login</button>
+                <button class="auth-tab-btn" data-tab="register">Register</button>
+              </div>
+              
+              <div id="login-tab" class="auth-tab-content active">
+                <form class="auth-form" id="login-form">
+                  <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" placeholder="Enter your email" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" placeholder="Enter your password" required>
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-block">Login</button>
+                </form>
+                
+                <div class="auth-divider">
+                  <span>OR</span>
+                </div>
+                
+                <button id="google-signin-btn" class="btn btn-google btn-block">
+                  <i class="fab fa-google"></i> Sign in with Google
+                </button>
+              </div>
+              
+              <div id="register-tab" class="auth-tab-content">
+                <form class="auth-form" id="register-form">
+                  <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-input" placeholder="Choose a username" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" placeholder="Enter your email" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" placeholder="Create a password" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Confirm Password</label>
+                    <input type="password" class="form-input" placeholder="Confirm your password" required>
+                  </div>
+                  <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+                </form>
+                
+                <div class="auth-divider">
+                  <span>OR</span>
+                </div>
+                
+                <button id="google-signup-btn" class="btn btn-google btn-block">
+                  <i class="fab fa-google"></i> Sign up with Google
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // Append modal to body
+      const modalContainer = document.createElement('div');
+      modalContainer.innerHTML = modalHTML;
+      document.body.appendChild(modalContainer.firstChild);
+      
+      // Set up event listeners for the modal
+      setupAuthModalEvents();
+    }
+    
+    // Show the modal
+    document.getElementById('authModal').style.display = 'flex';
+  }
+  
+  function setupAuthModalEvents() {
+    const modal = document.getElementById('authModal');
+    
+    // Close button functionality
+    document.querySelector('.auth-close').addEventListener('click', () => {
+      modal.style.display = 'none';
+    });
+    
+    // Close when clicking outside modal
+    window.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.style.display = 'none';
+      }
+    });
+    
+    // Tab switching
+    document.querySelectorAll('.auth-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        // Remove active class from all tabs and contents
+        document.querySelectorAll('.auth-tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.auth-tab-content').forEach(c => c.classList.remove('active'));
+        
+        // Add active class to clicked tab
+        btn.classList.add('active');
+        
+        // Show corresponding content
+        const tabName = btn.getAttribute('data-tab');
+        document.getElementById(`${tabName}-tab`).classList.add('active');
+      });
+    });
+    
+    // Form submission (placeholder)
+    document.getElementById('login-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      // In the future, implement email/password login
+      showNotification("Email/password login coming soon!", "info");
+    });
+    
+    document.getElementById('register-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      // In the future, implement email/password registration
+      showNotification("Email/password registration coming soon!", "info");
+    });
+    
+    // Google sign in buttons
+    document.getElementById('google-signin-btn').addEventListener('click', () => {
+      signInWithGoogle();
+      modal.style.display = 'none';
+    });
+    
+    document.getElementById('google-signup-btn').addEventListener('click', () => {
+      signInWithGoogle();
+      modal.style.display = 'none';
+    });
   }
 });
