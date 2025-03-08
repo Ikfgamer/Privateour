@@ -19,36 +19,15 @@ document.addEventListener('DOMContentLoaded', function() {
   const auth = firebase.auth();
   const db = firebase.firestore();
   
-  // Enable offline persistence for Firestore with better error handling
+  // Enable offline persistence for Firestore
   db.enablePersistence({synchronizeTabs: true})
     .catch(err => {
       if (err.code == 'failed-precondition') {
         console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
-        showNotification('Multiple tabs open. Close other tabs for offline sync.', 'warning');
       } else if (err.code == 'unimplemented') {
         console.log('The current browser does not support offline persistence');
-        showNotification('Your browser doesn\'t support offline mode.', 'warning');
-      } else {
-        console.error('Persistence error:', err);
-        showNotification('Offline mode setup failed. Check your connection.', 'error');
       }
     });
-    
-  // Add network status detection
-  let isOnline = window.navigator.onLine;
-  window.addEventListener('online', () => {
-    isOnline = true;
-    showNotification('You\'re back online! Syncing data...', 'success');
-    // Force refresh user data when back online
-    if (auth.currentUser) {
-      loadUserData(auth.currentUser);
-    }
-  });
-  
-  window.addEventListener('offline', () => {
-    isOnline = false;
-    showNotification('You\'re offline. Limited features available.', 'warning');
-  });
     
   const storage = firebase.storage();
 
@@ -353,93 +332,69 @@ document.addEventListener('DOMContentLoaded', function() {
     if (authButtons) authButtons.classList.add('hidden');
     if (userProfile) userProfile.classList.remove('hidden');
 
-    // Check if user is admin - use hard-coded check to work offline
+    // Check if user is admin
     const isAdmin = user.email && (
       user.email === 'Jitenadminpanelaccess@gmail.com' || 
       user.email === 'karateboyjitenderprajapat@gmail.com' || 
       user.email.endsWith('@admin.tournamenthub.com')
     );
 
-    // Enable admin panel if user is admin - always do this regardless of offline status
     if (adminPanelLink && isAdmin) {
       adminPanelLink.classList.remove('hidden');
       
-      // Remove existing event listeners to prevent duplicates
-      const newAdminPanelLink = adminPanelLink.cloneNode(true);
-      adminPanelLink.parentNode.replaceChild(newAdminPanelLink, adminPanelLink);
-      
       // Add click event listener for admin panel
-      newAdminPanelLink.addEventListener('click', function(e) {
+      adminPanelLink.addEventListener('click', function(e) {
         e.preventDefault();
         renderAdminPanel();
       });
     }
 
-    // Set default user data immediately
+    // Set default user data in case we're offline
     if (userPointsDisplay) {
-      userPointsDisplay.textContent = "100"; // Default value until we get data
+      userPointsDisplay.textContent = "100"; // Default value
     }
 
-    // Check if device is online before trying to fetch from Firestore
-    if (navigator.onLine) {
-      // Get and display user points - only if online
-      db.collection('users').doc(user.uid).get().then((doc) => {
-        if (doc.exists) {
-          const userData = doc.data();
-          if (userPointsDisplay) {
-            userPointsDisplay.textContent = userData.points || 0;
-          }
-  
-          // If this is an admin logging in, check and update admin status
-          if (isAdmin && !userData.isAdmin) {
-            db.collection('users').doc(user.uid).update({
-              isAdmin: true
-            }).then(() => {
-              console.log('User updated with admin privileges');
-              showNotification('Admin privileges granted', 'success');
-            }).catch(err => {
-              console.log('Failed to update admin status, but continuing with admin privileges');
-            });
-          }
-        } else if (isAdmin) {
-          // Create user document for admin if it doesn't exist yet
-          createUserDocument(user);
+    // Get and display user points
+    db.collection('users').doc(user.uid).get().then((doc) => {
+      if (doc.exists) {
+        const userData = doc.data();
+        if (userPointsDisplay) {
+          userPointsDisplay.textContent = userData.points || 0;
         }
-      }).catch(err => {
-        console.error('Error loading user data:', err);
-        handleOfflineMode(user, isAdmin, adminPanelLink, userPointsDisplay);
-      });
-    } else {
-      // Already know we're offline, don't even try Firestore
-      handleOfflineMode(user, isAdmin, adminPanelLink, userPointsDisplay);
-    }
 
-    // Track daily login - attempt even offline, as it will sync later
-    try {
-      trackDailyLogin(user.uid);
-    } catch (err) {
-      console.log('Could not track daily login, will try again when online');
-    }
-}
+        // If this is an admin logging in, check and update admin status
+        if (isAdmin && !userData.isAdmin) {
+          db.collection('users').doc(user.uid).update({
+            isAdmin: true
+          }).then(() => {
+            console.log('User updated with admin privileges');
+            showNotification('Admin privileges granted', 'success');
+          }).catch(err => {
+            console.log('Failed to update admin status, but continuing with admin privileges');
+          });
+        }
+      } else if (isAdmin) {
+        // Create user document for admin if it doesn't exist yet
+        createUserDocument(user);
+      }
+    }).catch(err => {
+      console.error('Error loading user data:', err);
+      showNotification("You're currently offline. Some features may be limited.", "warning");
+      
+      // Set default user data for offline mode
+      if (userPointsDisplay) {
+        userPointsDisplay.textContent = "100"; // Default points for offline mode
+      }
+      
+      // Always enable admin panel for admin emails, even offline
+      if (isAdmin && adminPanelLink) {
+        adminPanelLink.classList.remove('hidden');
+      }
+    });
 
-// Helper function to handle offline mode
-function handleOfflineMode(user, isAdmin, adminPanelLink, userPointsDisplay) {
-  showNotification("You're currently offline. Some features may be limited. Try checking your internet connection.", "warning");
-  
-  // Set default user data for offline mode
-  if (userPointsDisplay) {
-    userPointsDisplay.textContent = "100"; // Default points for offline mode
+    // Track daily login
+    trackDailyLogin(user.uid);
   }
-  
-  // Display offline indicator
-  const offlineIndicator = document.createElement('div');
-  offlineIndicator.className = 'offline-indicator';
-  offlineIndicator.innerHTML = '<i class="fas fa-wifi"></i> Offline Mode';
-  document.body.appendChild(offlineIndicator);
-  
-  // Try to connect to DNS servers
-  showNotification("Having connection issues? Consider changing your DNS to 8.8.8.8 (Google) or 1.1.1.1 (Cloudflare)", "info");
-}
 
   function trackDailyLogin(userId) {
     const userRef = db.collection('users').doc(userId);
@@ -2083,13 +2038,6 @@ function handleOfflineMode(user, isAdmin, adminPanelLink, userPointsDisplay) {
       return;
     }
 
-    // Check if online first
-    if (!navigator.onLine) {
-      // We're offline, show offline admin panel immediately
-      renderOfflineAdminPanel(user, mainContent);
-      return;
-    }
-
     // Try to get user data, but have fallback for offline mode
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
@@ -2809,262 +2757,6 @@ function handleOfflineMode(user, isAdmin, adminPanelLink, userPointsDisplay) {
             <div class="admin-card">
               <div class="admin-card-header">
                 <h2>Announcement Management</h2>
-
-// Render offline admin panel with placeholder data
-function renderOfflineAdminPanel(user, mainContent) {
-  const userDisplayName = user.displayName || user.email || 'Admin';
-  const userPhoto = user.photoURL || `https://ui-avatars.com/api/?name=${userDisplayName}&background=random&color=fff`;
-  
-  // Create mock stats for offline mode
-  const offlineStats = {
-    totalUsers: 0,
-    activeTournaments: 0,
-    pointsDistributed: 0,
-    newUsers: 0,
-    recentUsers: [],
-    tournaments: []
-  };
-  
-  mainContent.innerHTML = `
-    <div class="offline-admin-banner">
-      <i class="fas fa-wifi"></i> You are currently in offline mode. Limited functionality available.
-      <button id="check-connection" class="btn btn-sm btn-secondary ml-2">Check Connection</button>
-    </div>
-    <div class="admin-layout">
-      <div class="admin-sidebar">
-        <div class="admin-logo">
-          <i class="fas fa-trophy"></i> Admin Panel
-        </div>
-        <div class="admin-user">
-          <img src="${userPhoto}" alt="Admin Avatar">
-          <div class="admin-user-info">
-            <div class="admin-user-name">${userDisplayName}</div>
-            <div class="admin-user-role">Administrator (Offline)</div>
-          </div>
-        </div>
-        <ul class="admin-nav">
-          <li class="admin-nav-item">
-            <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
-              <i class="fas fa-tachometer-alt"></i> Dashboard
-            </a>
-          </li>
-          <li class="admin-nav-item">
-            <a href="#" class="admin-nav-link disabled">
-              <i class="fas fa-users"></i> User Management
-            </a>
-          </li>
-          <li class="admin-nav-item">
-            <a href="#" class="admin-nav-link disabled">
-              <i class="fas fa-trophy"></i> Tournament Management
-            </a>
-          </li>
-          <li class="admin-nav-item">
-            <a href="#" class="admin-nav-link disabled">
-              <i class="fas fa-gift"></i> Rewards & Earnings
-            </a>
-          </li>
-          <li class="admin-nav-item">
-            <a href="#" class="admin-nav-link disabled">
-              <i class="fas fa-ad"></i> Ad Management
-            </a>
-          </li>
-          <li class="admin-nav-item">
-            <a href="#" class="admin-nav-link" data-admin-page="settings">
-              <i class="fas fa-cog"></i> Connection Settings
-            </a>
-          </li>
-          <li class="admin-nav-item admin-nav-back">
-            <a href="#" class="admin-nav-link" id="back-to-site">
-              <i class="fas fa-arrow-left"></i> Back to Site
-            </a>
-          </li>
-        </ul>
-      </div>
-      <div class="admin-content">
-        <div id="admin-dashboard-page">
-          <div class="admin-header">
-            <h1 class="admin-title">Dashboard (Offline Mode)</h1>
-            <div class="admin-actions">
-              <button class="btn btn-primary" id="refresh-connection">
-                <i class="fas fa-sync-alt"></i> Retry Connection
-              </button>
-            </div>
-          </div>
-
-          <div class="admin-card">
-            <div class="alert info">
-              <h3><i class="fas fa-info-circle"></i> Offline Mode</h3>
-              <p>You are currently offline. Limited admin features are available.</p>
-              <p>Try these solutions:</p>
-              <ul class="mt-2">
-                <li>Check your internet connection</li>
-                <li>Try using a different DNS server (Google: 8.8.8.8 or Cloudflare: 1.1.1.1)</li>
-                <li>Clear your browser cache</li>
-                <li>Restart your browser</li>
-              </ul>
-            </div>
-          </div>
-
-          <div class="admin-card">
-            <h2>Connection Troubleshooting</h2>
-            <div class="dns-settings">
-              <h3>DNS Settings Guide</h3>
-              <p>If you're having trouble connecting to Firebase, try changing your DNS settings:</p>
-              
-              <div class="troubleshooting-steps">
-                <div class="troubleshooting-section">
-                  <h4>Windows:</h4>
-                  <ol>
-                    <li>Open Control Panel > Network and Sharing Center</li>
-                    <li>Click "Change adapter settings"</li>
-                    <li>Right-click your network connection > Properties</li>
-                    <li>Select "Internet Protocol Version 4 (TCP/IPv4)" > Properties</li>
-                    <li>Select "Use the following DNS server addresses"</li>
-                    <li>Enter 8.8.8.8 (Google) or 1.1.1.1 (Cloudflare)</li>
-                    <li>Click OK and restart your browser</li>
-                  </ol>
-                </div>
-                
-                <div class="troubleshooting-section">
-                  <h4>Mac:</h4>
-                  <ol>
-                    <li>Open System Preferences > Network</li>
-                    <li>Select your network connection > Advanced</li>
-                    <li>Go to DNS tab</li>
-                    <li>Click + to add a DNS server</li>
-                    <li>Enter 8.8.8.8 (Google) or 1.1.1.1 (Cloudflare)</li>
-                    <li>Click OK and restart your browser</li>
-                  </ol>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div id="admin-settings-page" style="display: none;">
-          <div class="admin-header">
-            <h1 class="admin-title">Connection Settings</h1>
-            <div class="admin-actions">
-              <button class="btn btn-primary" id="save-settings-btn">
-                <i class="fas fa-save"></i> Save Settings
-              </button>
-            </div>
-          </div>
-          
-          <div class="admin-card">
-            <h2>DNS Configuration Guide</h2>
-            <p>Follow the instructions below to change your DNS settings:</p>
-            
-            <div class="dns-config-steps">
-              <h3>Windows Instructions:</h3>
-              <ol>
-                <li>Open Control Panel</li>
-                <li>Navigate to "Network and Sharing Center"</li>
-                <li>Click "Change adapter settings"</li>
-                <li>Right-click on your active network connection and select "Properties"</li>
-                <li>Select "Internet Protocol Version 4 (TCP/IPv4)" and click "Properties"</li>
-                <li>Select "Use the following DNS server addresses"</li>
-                <li>Enter 8.8.8.8 (Google DNS) or 1.1.1.1 (Cloudflare DNS)</li>
-                <li>Click OK to save changes</li>
-              </ol>
-              
-              <h3>Mac Instructions:</h3>
-              <ol>
-                <li>Open System Preferences</li>
-                <li>Click on "Network"</li>
-                <li>Select your active network connection</li>
-                <li>Click "Advanced" in the lower-right corner</li>
-                <li>Go to the "DNS" tab</li>
-                <li>Click the "+" button to add a DNS server</li>
-                <li>Enter 8.8.8.8 (Google DNS) or 1.1.1.1 (Cloudflare DNS)</li>
-                <li>Click OK and Apply</li>
-              </ol>
-              
-              <h3>After Changing DNS:</h3>
-              <ol>
-                <li>Restart your browser</li>
-                <li>Clear browser cache (Ctrl+Shift+Delete or Cmd+Shift+Delete)</li>
-                <li>Refresh this page</li>
-              </ol>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  
-  // Add event listener for "Back to Site" button
-  document.getElementById('back-to-site').addEventListener('click', (e) => {
-    e.preventDefault();
-    renderMainContent('home');
-  });
-  
-  // Add event listener for "Check Connection" button
-  document.getElementById('check-connection').addEventListener('click', () => {
-    checkInternetConnection();
-  });
-  
-  // Add event listener for "Refresh Connection" button
-  document.getElementById('refresh-connection').addEventListener('click', () => {
-    showNotification("Checking connection...", "info");
-    checkInternetConnection();
-  });
-  
-  // Setup admin panel navigation
-  const adminLinks = document.querySelectorAll('.admin-nav-link:not(.disabled)');
-  adminLinks.forEach(link => {
-    link.addEventListener('click', function(e) {
-      if (this.classList.contains('disabled')) {
-        e.preventDefault();
-        showNotification("This feature is not available in offline mode", "warning");
-        return;
-      }
-      
-      e.preventDefault();
-      adminLinks.forEach(l => l.classList.remove('active'));
-      this.classList.add('active');
-      
-      const page = this.getAttribute('data-admin-page');
-      if (page) {
-        document.querySelectorAll('[id^="admin-"]').forEach(el => {
-          el.style.display = 'none';
-        });
-        
-        const pageEl = document.getElementById(`admin-${page}-page`);
-        if (pageEl) {
-          pageEl.style.display = 'block';
-        }
-      }
-    });
-  });
-}
-
-// Function to check internet connection and Firebase availability
-function checkInternetConnection() {
-  if (navigator.onLine) {
-    // Try to connect to Firebase
-    showNotification("Checking Firebase connection...", "info");
-    
-    // Try to fetch a small document from Firestore
-    const timestamp = Date.now();
-    db.collection('connection_test').doc(`test_${timestamp}`).set({
-      timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    })
-    .then(() => {
-      showNotification("Successfully connected to Firebase! Refreshing...", "success");
-      setTimeout(() => {
-        window.location.reload();
-      }, 2000);
-    })
-    .catch(error => {
-      console.error("Firebase connection test failed:", error);
-      showNotification("Connected to internet but Firebase is unreachable. Try changing your DNS settings.", "warning");
-    });
-  } else {
-    showNotification("You're offline. Please check your internet connection.", "error");
-  }
-}
-
               </div>
               
               <div class="announcement-form mb-4">
