@@ -2415,7 +2415,7 @@ copyReferralBtn) {
           btn.classList.add('active');
 
           // Show corresponding content
-          const tabName = btn.getAttribute`data-tab');
+          const tabName = btn.getAttribute('data-tab');
           const tabContent = modal.querySelector(`#${tabName}-tab`);
           if (tabContent) {
             tabContent.classList.add('active');
