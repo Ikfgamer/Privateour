@@ -2242,96 +2242,101 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check if modal already exists
     let modal = document.getElementById('authModal');
     
-    // Create modal if it doesn't exist
-    if (!modal) {
-      const modalHTML = `
-        <div id="authModal" class="auth-modal">
-          <div class="auth-modal-content">
-            <div class="auth-modal-header">
-              <h2><i class="fas fa-trophy"></i> Tournament Hub</h2>
-              <span class="auth-close">&times;</span>
+    // Remove existing modal if present to avoid conflicts
+    if (modal) {
+      document.body.removeChild(modal);
+    }
+    
+    // Create a new auth modal
+    const modalHTML = `
+      <div id="authModal" class="auth-modal">
+        <div class="auth-modal-content">
+          <div class="auth-modal-header">
+            <h2><i class="fas fa-trophy"></i> Tournament Hub</h2>
+            <span class="auth-close">&times;</span>
+          </div>
+          <div class="auth-modal-body">
+            <div class="auth-welcome">
+              <h3>Join the Tournament Community</h3>
+              <p>Sign up to participate in tournaments, earn rewards, and compete with players worldwide.</p>
             </div>
-            <div class="auth-modal-body">
-              <div class="auth-welcome">
-                <h3>Join the Tournament Community</h3>
-                <p>Sign up to participate in tournaments, earn rewards, and compete with players worldwide.</p>
-              </div>
-              <div class="auth-tabs">
-                <button class="auth-tab-btn active" data-tab="login">Login</button>
-                <button class="auth-tab-btn" data-tab="register">Register</button>
-              </div>
+            <div class="auth-tabs">
+              <button class="auth-tab-btn active" data-tab="login">Login</button>
+              <button class="auth-tab-btn" data-tab="register">Register</button>
+            </div>
 
-              <div id="login-tab" class="auth-tab-content active">
-                <form class="auth-form" id="login-form">
-                  <div class="form-group">
-                    <label class="form-label">Email</label>
-                    <input type="email" name="email" class="form-input" placeholder="Enter your email" required>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Password</label>
-                    <input type="password" name="password" class="form-input" placeholder="Enter your password" required>
-                  </div>
-                  <button type="submit" class="btn btn-gradient btn-block">Login</button>
-                </form>
-
-                <div class="auth-divider">
-                  <span>OR</span>
+            <div id="login-tab" class="auth-tab-content active">
+              <form class="auth-form" id="login-form">
+                <div class="form-group">
+                  <label class="form-label">Email</label>
+                  <input type="email" name="email" class="form-input" placeholder="Enter your email" required>
                 </div>
-
-                <button id="google-signin-btn" class="btn btn-google btn-block">
-                  <i class="fab fa-google"></i> Continue with Google
-                </button>
-              </div>
-
-              <div id="register-tab" class="auth-tab-content">
-                <form class="auth-form" id="register-form">
-                  <div class="form-group">
-                    <label class="form-label">Username</label>
-                    <input type="text" name="username" class="form-input" placeholder="Choose a username" required>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Email</label>
-                    <input type="email" name="email" class="form-input" placeholder="Enter your email" required>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Password</label>
-                    <input type="password" name="password" class="form-input" placeholder="Create a password" required>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Confirm Password</label>
-                    <input type="password" name="confirm-password" class="form-input" placeholder="Confirm your password" required>
-                  </div>
-                  <button type="submit" class="btn btn-gradient btn-block">Create Account</button>
-                </form>
-
-                <div class="auth-divider">
-                  <span>OR</span>
+                <div class="form-group">
+                  <label class="form-label">Password</label>
+                  <input type="password" name="password" class="form-input" placeholder="Enter your password" required>
                 </div>
+                <button type="submit" class="btn btn-gradient btn-block">Login</button>
+              </form>
 
-                <button id="google-signup-btn" class="btn btn-google btn-block">
-                  <i class="fab fa-google"></i> Sign up with Google
-                </button>
+              <div class="auth-divider">
+                <span>OR</span>
               </div>
+
+              <button id="google-signin-btn" class="btn btn-google btn-block">
+                <i class="fab fa-google"></i> Continue with Google
+              </button>
+            </div>
+
+            <div id="register-tab" class="auth-tab-content">
+              <form class="auth-form" id="register-form">
+                <div class="form-group">
+                  <label class="form-label">Username</label>
+                  <input type="text" name="username" class="form-input" placeholder="Choose a username" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Email</label>
+                  <input type="email" name="email" class="form-input" placeholder="Enter your email" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Password</label>
+                  <input type="password" name="password" class="form-input" placeholder="Create a password" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Confirm Password</label>
+                  <input type="password" name="confirm-password" class="form-input" placeholder="Confirm your password" required>
+                </div>
+                <button type="submit" class="btn btn-gradient btn-block">Create Account</button>
+              </form>
+
+              <div class="auth-divider">
+                <span>OR</span>
+              </div>
+
+              <button id="google-signup-btn" class="btn btn-google btn-block">
+                <i class="fab fa-google"></i> Sign up with Google
+              </button>
             </div>
           </div>
         </div>
-      `;
+      </div>
+    `;
 
-      // Create and append modal to body
-      const modalContainer = document.createElement('div');
-      modalContainer.innerHTML = modalHTML;
-      document.body.appendChild(modalContainer.firstChild);
-      
-      // Get the newly created modal
-      modal = document.getElementById('authModal');
-      
-      // Set up event listeners immediately after adding to the DOM
-      setupAuthModalEvents();
-    }
-
-    // Show the modal (modal is guaranteed to exist at this point)
+    // Create the modal element
+    const modalElement = document.createElement('div');
+    modalElement.innerHTML = modalHTML;
+    
+    // Append the modal to the body directly
+    document.body.appendChild(modalElement.firstElementChild);
+    
+    // Get the newly created modal (after it's definitely in the DOM)
+    modal = document.getElementById('authModal');
+    
     if (modal) {
+      // Show the modal
       modal.style.display = 'flex';
+      
+      // Set up the event listeners
+      setupAuthModalEvents();
     } else {
       console.error('Failed to create auth modal');
       showNotification("An error occurred. Please try again.", "error");
@@ -2348,15 +2353,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Close button functionality
     const closeButton = modal.querySelector('.auth-close');
     if (closeButton) {
-      closeButton.addEventListener('click', () => {
+      closeButton.addEventListener('click', function() {
         modal.style.display = 'none';
       });
-    } else {
-      console.warn('Close button not found in auth modal');
     }
 
     // Close when clicking outside modal
-    window.addEventListener('click', (e) => {
+    document.addEventListener('click', function(e) {
       if (e.target === modal) {
         modal.style.display = 'none';
       }
@@ -2365,11 +2368,16 @@ document.addEventListener('DOMContentLoaded', function() {
     // Tab switching
     const tabButtons = modal.querySelectorAll('.auth-tab-btn');
     if (tabButtons && tabButtons.length > 0) {
-      tabButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
+      tabButtons.forEach(function(btn) {
+        btn.addEventListener('click', function() {
           // Remove active class from all tabs and contents
-          modal.querySelectorAll('.auth-tab-btn').forEach(b => b.classList.remove('active'));
-          modal.querySelectorAll('.auth-tab-content').forEach(c => c.classList.remove('active'));
+          modal.querySelectorAll('.auth-tab-btn').forEach(function(b) {
+            b.classList.remove('active');
+          });
+          
+          modal.querySelectorAll('.auth-tab-content').forEach(function(c) {
+            c.classList.remove('active');
+          });
 
           // Add active class to clicked tab
           btn.classList.add('active');
@@ -2379,25 +2387,21 @@ document.addEventListener('DOMContentLoaded', function() {
           const tabContent = modal.querySelector(`#${tabName}-tab`);
           if (tabContent) {
             tabContent.classList.add('active');
-          } else {
-            console.warn(`Tab content #${tabName}-tab not found`);
           }
         });
       });
-    } else {
-      console.warn('Tab buttons not found in auth modal');
     }
 
     // Form submission for email/password login
     const loginForm = modal.querySelector('#login-form');
     if (loginForm) {
-      loginForm.addEventListener('submit', (e) => {
+      loginForm.addEventListener('submit', function(e) {
         e.preventDefault();
         const emailInput = loginForm.querySelector('input[name="email"]');
         const passwordInput = loginForm.querySelector('input[name="password"]');
         
         if (!emailInput || !passwordInput) {
-          console.error('Email or password input not found');
+          showNotification("Email or password input not found", "error");
           return;
         }
         
@@ -2413,14 +2417,12 @@ document.addEventListener('DOMContentLoaded', function() {
         signInWithEmailPassword(email, password);
         modal.style.display = 'none';
       });
-    } else {
-      console.warn('Login form not found in auth modal');
     }
 
     // Form submission for email/password registration
     const registerForm = modal.querySelector('#register-form');
     if (registerForm) {
-      registerForm.addEventListener('submit', (e) => {
+      registerForm.addEventListener('submit', function(e) {
         e.preventDefault();
         const usernameInput = registerForm.querySelector('input[name="username"]');
         const emailInput = registerForm.querySelector('input[name="email"]');
@@ -2428,7 +2430,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const confirmPasswordInput = registerForm.querySelector('input[name="confirm-password"]');
         
         if (!usernameInput || !emailInput || !passwordInput || !confirmPasswordInput) {
-          console.error('One or more registration inputs not found');
+          showNotification("One or more registration inputs not found", "error");
           return;
         }
         
@@ -2451,29 +2453,23 @@ document.addEventListener('DOMContentLoaded', function() {
         createUserWithEmailPassword(email, password, username);
         modal.style.display = 'none';
       });
-    } else {
-      console.warn('Register form not found in auth modal');
     }
 
     // Google sign in buttons
     const googleSignInBtn = modal.querySelector('#google-signin-btn');
     if (googleSignInBtn) {
-      googleSignInBtn.addEventListener('click', () => {
+      googleSignInBtn.addEventListener('click', function() {
         signInWithGoogle();
         modal.style.display = 'none';
       });
-    } else {
-      console.warn('Google sign in button not found');
     }
 
     const googleSignUpBtn = modal.querySelector('#google-signup-btn');
     if (googleSignUpBtn) {
-      googleSignUpBtn.addEventListener('click', () => {
+      googleSignUpBtn.addEventListener('click', function() {
         signInWithGoogle();
         modal.style.display = 'none';
       });
-    } else {
-      console.warn('Google sign up button not found');
     }
   }
   
