@@ -1491,8 +1491,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         // Copy referral link button
         const copyReferralBtn = document.getElementById('copy-referral-link');
-        if (```javascript
-copyReferralBtn) {
+        if (copyReferralBtn) {
           copyReferralBtn.addEventListener('click', function() {
             const referralLink = document.getElementById('referral-link');
             referralLink.select();
@@ -2257,12 +2256,10 @@ copyReferralBtn) {
   function showAuthModal() {
     console.log("Show Authentication Modal");
 
-    // Check if modal already exists
-    let modal = document.getElementById('authModal');
-
-    // Remove existing modal if present to avoid conflicts
-    if (modal) {
-      modal.remove();
+    // Check if modal already exists and remove it to avoid conflicts
+    let existingModal = document.getElementById('authModal');
+    if (existingModal) {
+      existingModal.remove();
     }
 
     // Create a new auth modal with proper display style
@@ -2349,12 +2346,21 @@ copyReferralBtn) {
     // Create the modal element
     const modalElement = document.createElement('div');
     modalElement.innerHTML = modalHTML;
-
+    
+    // Get the first element child (the actual modal)
+    const modalNode = modalElement.firstElementChild;
+    
+    if (!modalNode) {
+      console.error('Failed to create auth modal element');
+      showNotification("An error occurred. Please try again.", "error");
+      return;
+    }
+    
     // Append the modal to the body directly
-    document.body.appendChild(modalElement.firstElementChild);
+    document.body.appendChild(modalNode);
 
     // Get the newly created modal (after it's definitely in the DOM)
-    modal = document.getElementById('authModal');
+    const modal = document.getElementById('authModal');
 
     if (modal) {
       // Show the modal
@@ -2363,7 +2369,7 @@ copyReferralBtn) {
       // Set up the event listeners
       setTimeout(() => {
         setupAuthModalEvents();
-      }, 100); // Short delay to ensure DOM is ready
+      }, 200); // Increased delay to ensure DOM is ready
     } else {
       console.error('Failed to create auth modal');
       showNotification("An error occurred. Please try again.", "error");
@@ -2374,11 +2380,12 @@ copyReferralBtn) {
     const modal = document.getElementById('authModal');
     if (!modal) {
       console.error('Auth modal not found in the DOM');
-      showNotification("Authentication system error. Please refresh the page and try again.", "error");
-      // Try to create modal again
+      console.log('Failed to create auth modal');
+      showNotification("Authentication system error. Please try again.", "error");
+      // Try to create modal again with longer delay
       setTimeout(() => {
         showAuthModal();
-      }, 100);
+      }, 300);
       return;
     }
 
