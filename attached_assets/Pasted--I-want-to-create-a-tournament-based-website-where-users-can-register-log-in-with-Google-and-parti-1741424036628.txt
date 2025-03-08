@@ -1,0 +1,143 @@
+"I want to create a tournament-based website where users can register, log in with Google, and participate in tournaments. The website should have a refer & earn system, daily login rewards, and an ad-watching feature to earn points. Additionally, it should support:
+
+User Features:
+
+1️⃣ User Registration & Login:
+
+Google Authentication
+
+Email & Password Login
+
+Profile Setup with Username & Avatar
+
+
+
+Add this this in top of website home page, tournament,rewards,vip, community 
+
+
+2️⃣ Home Page:
+
+Display upcoming tournaments
+
+Featured tournaments with high rewards
+
+Live tournament updates
+
+Show all tournament add by the admin
+
+
+3️⃣ Tournament System:
+
+Users can join tournaments using points
+
+Display tournament rules, start time, and prize pool
+
+Users can see live leaderboards
+
+
+4️⃣ Earning Features:
+
+Refer & Earn: Users get bonus points when their friends sign up
+
+Daily Login Rewards: Users get points for logging in daily
+
+Watch Ads & Earn: Users can watch ads to earn extra points
+
+
+5️⃣ VIP & Membership System:(write available soon )
+
+Users can buy VIP status to get extra benefits like:
+
+Early tournament access
+
+Double earnings
+
+Exclusive tournaments
+
+
+
+
+6) Leaderboard & Competitions:
+
+Weekly top earners & best players
+
+Extra rewards for top players
+
+
+7) Community Chat & Forum:
+
+Users can chat, find teammates, and discuss strategies
+
+
+8) Flash Tournaments (Quick Games):
+
+1-hour tournaments with small entry fees
+
+Includes mini-games & quizzes
+
+
+
+---
+
+Admin Panel Features:
+
+Admin able to control full website 
+
+Admin Dashboard:
+
+View & Manage Users, Tournaments, Earnings, and Reports
+
+Add or Remove Tournaments
+
+Ban Users or Reset User Points
+
+
+Tournament Management:
+
+Create, Edit, or Remove Tournaments
+
+Adjust Entry Fees, Rewards, and Timing
+
+
+User Management:
+
+View all registered users
+
+Ban users for breaking rules
+
+Adjust user points & VIP status
+
+
+Rewards & Earnings:
+
+Set daily rewards, referral bonuses, and ad earnings
+
+
+
+
+Ad & Monetization Control:
+
+Manage Google AdSense or AdMob Ads
+
+Enable or disable Watch Ads & Earn
+
+
+
+---
+
+Technology Stack:
+
+Frontend: HTML, CSS, JavaScript (React or Next.js)
+
+Backend: Node.js with Firebase Firestore or Supabase
+
+Authentication: Firebase Auth (Google & Email Login)
+
+Database: Firestore for storing user data & tournaments
+
+
+
+Generate Code:
+
+"Now generate the full frontend and backend code for this tournament website, including a secure admin panel where the admin can manage users, tournaments, and earnings. The admin panel should be protected with a login system so only authorized admins can access it."
+
