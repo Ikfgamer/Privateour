@@ -141,7 +141,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       });
     }
-    
+
     // Add footer
     const footer = document.createElement('footer');
     footer.className = 'site-footer';
@@ -187,7 +187,7 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     `;
     appContainer.appendChild(footer);
-    
+
     // Setup footer link events
     const footerLinks = document.querySelectorAll('.footer-links a[data-page]');
     if (footerLinks) {
@@ -203,28 +203,28 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    
+
     // Add scope for profile info
     provider.addScope('profile');
     provider.addScope('email');
-    
+
     // First try signInWithPopup as it works better in embedded environments
     auth.signInWithPopup(provider)
       .then((result) => {
         console.log('Google sign in successful');
         const user = result.user;
-        
+
         // Check if this is a new user
         const isNewUser = result.additionalUserInfo?.isNewUser;
         if (isNewUser) {
           createUserDocument(user);
         }
-        
+
         showNotification(`Welcome, ${user.displayName}!`, "success");
       })
       .catch((error) => {
         console.error('Google sign in popup error:', error);
-        
+
         // If popup fails, try redirect as fallback
         if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user') {
           try {
@@ -233,19 +233,19 @@ document.addEventListener('DOMContentLoaded', function() {
               .catch((redirectError) => {
                 handleGoogleSignInError(redirectError);
               });
-              
+
             // Setup redirect result handler
             auth.getRedirectResult().then((result) => {
               if (result.user) {
                 console.log('Google sign in successful after redirect');
                 const user = result.user;
-                
+
                 // Check if this is a new user
                 const isNewUser = result.additionalUserInfo?.isNewUser;
                 if (isNewUser) {
                   createUserDocument(user);
                 }
-                
+
                 showNotification(`Welcome, ${user.displayName}!`, "success");
               }
             }).catch((redirectResultError) => {
@@ -261,10 +261,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       });
   }
-  
+
   function handleGoogleSignInError(error) {
     console.error('Google sign in error:', error);
-    
+
     // Handle specific error codes
     if (error.code === 'auth/unauthorized-domain') {
       showNotification("This domain is not authorized for Google Sign-in. Please use email/password instead.", "warning");
@@ -320,14 +320,14 @@ document.addEventListener('DOMContentLoaded', function() {
     if (userAvatar) userAvatar.src = user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random&color=fff`;
     if (authButtons) authButtons.classList.add('hidden');
     if (userProfile) userProfile.classList.remove('hidden');
-    
+
     // Check if user is admin
     const isAdmin = user.email && (
       user.email === 'Jitenadminpanelaccess@gmail.com' || 
       user.email === 'karateboyjitenderprajapat@gmail.com' || 
       user.email.endsWith('@admin.tournamenthub.com')
     );
-    
+
     if (adminPanelLink && isAdmin) {
       adminPanelLink.classList.remove('hidden');
     }
@@ -339,7 +339,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (userPointsDisplay) {
           userPointsDisplay.textContent = userData.points || 0;
         }
-        
+
         // If this is an admin logging in, check and update admin status
         if (isAdmin && !userData.isAdmin) {
           db.collection('users').doc(user.uid).update({
@@ -528,15 +528,24 @@ document.addEventListener('DOMContentLoaded', function() {
     const user = auth.currentUser;
     if (!user) return;
 
+    // Show loading state
+    mainContent.innerHTML = `
+      <div class="container text-center mt-4">
+        <div class="loader"></div>
+        <p>Loading homepage...</p>
+      </div>
+    `;
+
     // Get user data from Firestore
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
         const userData = doc.data();
 
         mainContent.innerHTML = `
-          <div class="hero">
-            <h1>Welcome back, ${userData.displayName}!</h1>
-            <p>You have ${userData.points} points to use in tournaments.</p>
+          <div class="hero" style="background: linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url('https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80'); background-size: cover; padding: 5rem 2rem; text-align: center; border-radius: 0 0 var(--border-radius) var(--border-radius);">
+            <h1 style="font-size: 3rem; margin-bottom: 1.5rem; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);">Welcome back, ${userData.displayName}!</h1>
+            <p style="font-size: 1.4rem; margin-bottom: 2rem; max-width: 800px; margin-left: auto; margin-right: auto; text-shadow: 1px 1px 2px rgba(0,0,0,0.5);">You have <span style="color: var(--secondary-color); font-weight: bold;">${userData.points}</span> points to use in tournaments.</p>
+            <a href="#tournaments" class="btn btn-gradient" style="font-size: 1.1rem; padding: 0.75rem 2rem; border-radius: 50px; box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);">Explore Tournaments</a>
           </div>
           <div class="container">
             <div class="stats-grid mb-4">
@@ -644,7 +653,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function renderTournamentsPage() {
     const mainContent = document.getElementById('main-content');
     const user = firebase.auth().currentUser;
-    
+
     const tournamentsHTML = `
       <div class="container">
         <h2 class="section-title">All Tournaments</h2>
@@ -657,17 +666,17 @@ document.addEventListener('DOMContentLoaded', function() {
               <option value="ongoing">Ongoing</option>
               <option value="completed">Completed</option>
             </select>
-            
+
             <select class="form-input tournament-filter ml-2" id="tournament-prize-filter">
               <option value="all">All Prize Pools</option>
               <option value="low">Low (< 1000 points)</option>
               <option value="medium">Medium (1000-3000 points)</option>
               <option value="high">High (> 3000 points)</option>
             </select>
-            
+
             <input type="text" class="form-input ml-2" id="tournament-search" placeholder="Search tournaments...">
           </div>
-          
+
           <div class="tournament-count">
             <span id="tournament-count-display">6 tournaments found</span>
           </div>
@@ -695,7 +704,7 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           </div>
-          
+
           <div class="tournament-card">
             <div class="tournament-banner">
               <span class="tournament-status ongoing">Ongoing</span>
@@ -717,7 +726,7 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           </div>
-          
+
           <div class="tournament-card">
             <div class="tournament-banner">
               <span class="tournament-status today">Today</span>
@@ -728,8 +737,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <div class="tournament-info">
                 <span class="tournament-date"><i class="far fa-calendar-alt"></i> Today</span>
                 <span class="tournament-players"><i class="fas fa-users"></i> 32 players</span>
-              </div>
-              <div class="tournament-game">
+              </div><div class="tournament-game">
                 <span><i class="fas fa-brain"></i> Trivia Masters</span>
               </div>
               <div class="tournament-prize">Prize: 500 points</div>
@@ -739,7 +747,7 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           </div>
-          
+
           <div class="tournament-card">
             <div class="tournament-banner">
               <span class="tournament-status upcoming">Next Week</span>
@@ -761,7 +769,7 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           </div>
-          
+
           <div class="tournament-card">
             <div class="tournament-banner">
               <span class="tournament-status upcoming">Tomorrow</span>
@@ -783,7 +791,7 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           </div>
-          
+
           <div class="tournament-card vip-tournament">
             <div class="tournament-banner">
               <span class="tournament-status vip">VIP Only</span>
@@ -808,49 +816,49 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
       </div>
     `;
-    
+
     mainContent.innerHTML = tournamentsHTML;
-    
+
     // Add event listeners for tournament filtering
     const statusFilter = document.getElementById('tournament-status-filter');
     const prizeFilter = document.getElementById('tournament-prize-filter');
     const searchInput = document.getElementById('tournament-search');
-    
+
     if (statusFilter) {
       statusFilter.addEventListener('change', filterTournaments);
     }
-    
+
     if (prizeFilter) {
       prizeFilter.addEventListener('change', filterTournaments);
     }
-    
+
     if (searchInput) {
       searchInput.addEventListener('input', filterTournaments);
     }
-    
+
     // Add event listeners for join tournament buttons
     const joinButtons = document.querySelectorAll('.tournament-join-btn');
     joinButtons.forEach(button => {
       button.addEventListener('click', function() {
         const tournamentId = this.getAttribute('data-tournament-id');
         const entryFee = parseInt(this.getAttribute('data-entry-fee'), 10);
-        
+
         if (!user) {
           showNotification("Please sign in to join tournaments", "warning");
           showAuthModal();
           return;
         }
-        
+
         // Check if user has enough points
         db.collection('users').doc(user.uid).get().then(doc => {
           if (doc.exists) {
             const userData = doc.data();
             const userPoints = userData.points || 0;
-            
+
             if (userPoints >= entryFee) {
               // Here you would implement the tournament join logic
               showNotification(`Successfully joined tournament! Entry fee: ${entryFee} points`, "success");
-              
+
               // Update user points
               db.collection('users').doc(user.uid).update({
                 points: firebase.firestore.FieldValue.increment(-entryFee),
@@ -876,35 +884,35 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     });
   }
-  
+
   function filterTournaments() {
     const statusFilter = document.getElementById('tournament-status-filter').value;
     const prizeFilter = document.getElementById('tournament-prize-filter').value;
     const searchTerm = document.getElementById('tournament-search').value.toLowerCase();
-    
+
     const tournamentCards = document.querySelectorAll('.tournament-card');
     let visibleCount = 0;
-    
+
     tournamentCards.forEach(card => {
       // Get tournament details
       const title = card.querySelector('.tournament-title').textContent.toLowerCase();
       const status = card.querySelector('.tournament-status').textContent.toLowerCase();
       const prize = card.querySelector('.tournament-prize').textContent;
       const prizeValue = parseInt(prize.match(/\d+/)[0], 10);
-      
+
       // Check if tournament matches all filters
       let matchesStatus = statusFilter === 'all' || 
                          (statusFilter === 'upcoming' && (status.includes('upcoming') || status.includes('next') || status.includes('tomorrow'))) ||
                          (statusFilter === 'ongoing' && status.includes('ongoing')) ||
                          (statusFilter === 'completed' && status.includes('completed'));
-                         
+
       let matchesPrize = prizeFilter === 'all' || 
                         (prizeFilter === 'low' && prizeValue < 1000) ||
                         (prizeFilter === 'medium' && prizeValue >= 1000 && prizeValue <= 3000) ||
                         (prizeFilter === 'high' && prizeValue > 3000);
-                        
+
       let matchesSearch = searchTerm === '' || title.includes(searchTerm);
-      
+
       // Show or hide tournament card
       if (matchesStatus && matchesPrize && matchesSearch) {
         card.style.display = 'block';
@@ -913,7 +921,7 @@ document.addEventListener('DOMContentLoaded', function() {
         card.style.display = 'none';
       }
     });
-    
+
     // Update count display
     const countDisplay = document.getElementById('tournament-count-display');
     if (countDisplay) {
@@ -1082,11 +1090,12 @@ document.addEventListener('DOMContentLoaded', function() {
               <div class="message">
                 <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
                 <div class="message-content">
-                  <div class="message-sender">GamePro99</<div class="message-text">Anyone joining the Weekend Warrior Challenge? Looking for teammates!</div>
+                  <div class="message-sender">GamePro99</div>
+                  <div class="message-text">Anyone joining the Weekend Warrior Challenge? Looking for teammates!</div>
                   <div class="message-time">45 minutes ago</div>
                 </div>
               </div>
-              <div classdiv class="message">
+              <div class="message">
                 <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
                 <div class="message-content">
                   <div class="message-sender">StrategyGuru</div>
@@ -1221,7 +1230,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <div class="stat-label">Login Streak</div>
                 </div>
               </div>
-              
+
               <div class="profile-content">
                 <div class="profile-tabs">
                   <div class="profile-tab active" data-tab="tournaments">Tournament History</div>
@@ -1229,7 +1238,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <div class="profile-tab" data-tab="referrals">Referrals</div>
                   <div class="profile-tab" data-tab="settings">Account Settings</div>
                 </div>
-                
+
                 <div class="profile-tab-content" id="tournaments-tab">
                   <div class="profile-section">
                     <h3 class="profile-section-title"><i class="fas fa-trophy"></i> Your Tournament History</h3>
@@ -1261,7 +1270,7 @@ document.addEventListener('DOMContentLoaded', function() {
                       </div>
                     `}
                   </div>
-                  
+
                   <div class="profile-section">
                     <h3 class="profile-section-title"><i class="fas fa-medal"></i> Upcoming Tournaments</h3>
                     <div class="grid mt-3">
@@ -1289,7 +1298,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div class="profile-tab-content hidden" id="achievements-tab">
                   <div class="profile-section">
                     <h3 class="profile-section-title"><i class="fas fa-award"></i> Your Achievements</h3>
@@ -1303,7 +1312,7 @@ document.addEventListener('DOMContentLoaded', function() {
                           <p>Join Tournament Hub</p>
                         </div>
                       </div>
-                      
+
                       <div class="achievement-card active">
                         <div class="achievement-icon">
                           <i class="fas fa-coins"></i>
@@ -1313,7 +1322,7 @@ document.addEventListener('DOMContentLoaded', function() {
                           <p>Earn at least 100 points</p>
                         </div>
                       </div>
-                      
+
                       <div class="achievement-card ${userData.rewards?.dailyLogin?.streakDays >= 7 ? 'active' : ''}">
                         <div class="achievement-icon">
                           <i class="fas fa-calendar-check"></i>
@@ -1323,7 +1332,7 @@ document.addEventListener('DOMContentLoaded', function() {
                           <p>Log in for 7 days in a row</p>
                         </div>
                       </div>
-                      
+
                       <div class="achievement-card ${tournamentCount > 0 ? 'active' : ''}">
                         <div class="achievement-icon">
                           <i class="fas fa-gamepad"></i>
@@ -1333,7 +1342,7 @@ document.addEventListener('DOMContentLoaded', function() {
                           <p>Join your first tournament</p>
                         </div>
                       </div>
-                      
+
                       <div class="achievement-card">
                         <div class="achievement-icon">
                           <i class="fas fa-trophy"></i>
@@ -1343,7 +1352,7 @@ document.addEventListener('DOMContentLoaded', function() {
                           <p>Win your first tournament</p>
                         </div>
                       </div>
-                      
+
                       <div class="achievement-card">
                         <div class="achievement-icon">
                           <i class="fas fa-crown"></i>
@@ -1356,12 +1365,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div class="profile-tab-content hidden" id="referrals-tab">
                   <div class="profile-section">
                     <h3 class="profile-section-title"><i class="fas fa-user-plus"></i> Referrals</h3>
                     <p class="mb-3">Invite friends to join Tournament Hub and earn 100 points for each friend who signs up using your referral link.</p>
-                    
+
                     <div class="form-group mb-3">
                       <label class="form-label">Your Referral Link</label>
                       <div class="referral-link-container">
@@ -1369,19 +1378,19 @@ document.addEventListener('DOMContentLoaded', function() {
                         <button class="btn btn-primary" id="copy-referral-link">Copy</button>
                       </div>
                     </div>
-                    
+
                     <div class="referral-stats">
                       <div class="referral-stat">
                         <div class="referral-stat-value">${userData.referrals?.length || 0}</div>
                         <div class="referral-stat-label">Friends Invited</div>
                       </div>
-                      
+
                       <div class="referral-stat">
                         <div class="referral-stat-value">${(userData.referrals?.length || 0) * 100}</div>
                         <div class="referral-stat-label">Points Earned</div>
                       </div>
                     </div>
-                    
+
                     <div class="social-share mt-4">
                       <p>Share your referral link:</p>
                       <div class="social-buttons">
@@ -1393,21 +1402,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     </div>
                   </div>
                 </div>
-                
+
                 <div class="profile-tab-content hidden" id="settings-tab">
                   <div class="profile-section">
                     <h3 class="profile-section-title"><i class="fas fa-user-cog"></i> Account Settings</h3>
-                    
+
                     <div class="form-group">
                       <label class="form-label">Display Name</label>
                       <input type="text" class="form-input" id="display-name" value="${userData.displayName}">
                     </div>
-                    
+
                     <div class="form-group">
                       <label class="form-label">Email</label>
                       <input type="email" class="form-input" value="${userData.email}" readonly>
                     </div>
-                    
+
                     <div class="form-group">
                       <label class="form-label">Profile Picture</label>
                       <div class="avatar-upload">
@@ -1415,7 +1424,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <button class="btn btn-secondary" id="change-avatar-btn">Change Picture</button>
                       </div>
                     </div>
-                    
+
                     <div class="form-group">
                       <label class="form-label">Notification Settings</label>
                       <div class="checkbox-group">
@@ -1430,15 +1439,15 @@ document.addEventListener('DOMContentLoaded', function() {
                         </label>
                       </div>
                     </div>
-                    
+
                     <button class="btn btn-primary mt-3" id="save-settings-btn">Save Changes</button>
                   </div>
-                  
+
                   <div class="profile-section">
                     <h3 class="profile-section-title"><i class="fas fa-shield-alt"></i> Security</h3>
-                    
+
                     <button class="btn btn-secondary mb-3" id="change-password-btn">Change Password</button>
-                    
+
                     <div class="form-group">
                       <label class="form-label">Two-Factor Authentication</label>
                       <div class="toggle-container">
@@ -1455,22 +1464,22 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
           </div>
         `;
-        
+
         // Setup tab switching
         const tabs = document.querySelectorAll('.profile-tab');
         if (tabs.length > 0) {
           tabs.forEach(tab => {
             tab.addEventListener('click', function() {
               const tabName = this.getAttribute('data-tab');
-              
+
               // Hide all tab contents
               document.querySelectorAll('.profile-tab-content').forEach(content => {
                 content.classList.add('hidden');
               });
-              
+
               // Show selected tab content
               document.getElementById(`${tabName}-tab`).classList.remove('hidden');
-              
+
               // Update active tab
               document.querySelectorAll('.profile-tab').forEach(t => {
                 t.classList.remove('active');
@@ -1479,10 +1488,11 @@ document.addEventListener('DOMContentLoaded', function() {
             });
           });
         }
-        
+
         // Copy referral link button
         const copyReferralBtn = document.getElementById('copy-referral-link');
-        if (copyReferralBtn) {
+        if (```javascript
+copyReferralBtn) {
           copyReferralBtn.addEventListener('click', function() {
             const referralLink = document.getElementById('referral-link');
             referralLink.select();
@@ -1490,7 +1500,7 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('Referral link copied to clipboard!', 'success');
           });
         }
-        
+
         // Find tournaments button
         const findTournamentsBtn = document.getElementById('find-tournaments-btn');
         if (findTournamentsBtn) {
@@ -1498,13 +1508,13 @@ document.addEventListener('DOMContentLoaded', function() {
             renderMainContent('tournaments');
           });
         }
-        
+
         // Save settings button
         const saveSettingsBtn = document.getElementById('save-settings-btn');
         if (saveSettingsBtn) {
           saveSettingsBtn.addEventListener('click', function() {
             const newDisplayName = document.getElementById('display-name').value.trim();
-            
+
             if (newDisplayName && newDisplayName !== userData.displayName) {
               // Update display name in Firebase Auth
               user.updateProfile({
@@ -1528,7 +1538,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
           });
         }
-        
+
         // Change avatar button
         const changeAvatarBtn = document.getElementById('change-avatar-btn');
         if (changeAvatarBtn) {
@@ -1536,7 +1546,7 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('Avatar change feature coming soon!', 'info');
           });
         }
-        
+
         // Change password button
         const changePasswordBtn = document.getElementById('change-password-btn');
         if (changePasswordBtn) {
@@ -1561,11 +1571,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderAdminPanel() {
     const mainContent = document.getElementById('main-content');
-    if (!mainContent) return;
+    if (!mainContent) {
+      console.error('Main content container not found');
+      showNotification("An error occurred. Please refresh the page.", "error");
+      return;
+    }
 
     // Check if current user is admin
     const user = auth.currentUser;
-    if (!user) return;
+    if (!user) {
+      showNotification("Please sign in to access the admin panel", "error");
+      renderAuthContent();
+      return;
+    }
 
     // Show loading state
     mainContent.innerHTML = `
@@ -1798,13 +1816,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Setup admin panel event listeners
             setupAdminPanelEvents();
-            
+
             // Add event listener for "Back to Site" button
             document.getElementById('back-to-site').addEventListener('click', (e) => {
               e.preventDefault();
               renderMainContent('home');
             });
-            
+
             // Add event listener for "Refresh Data" button
             document.getElementById('refresh-admin-data').addEventListener('click', () => {
               loadAdminStats().then(updatedStats => {
@@ -1813,29 +1831,29 @@ document.addEventListener('DOMContentLoaded', function() {
                 document.querySelectorAll('.stat-box .value')[1].textContent = updatedStats.activeTournaments;
                 document.querySelectorAll('.stat-box .value')[2].textContent = updatedStats.pointsDistributed;
                 document.querySelectorAll('.stat-box .value')[3].textContent = updatedStats.newUsers;
-                
+
                 // Update tables as needed
                 showNotification("Dashboard data refreshed", "success");
               });
             });
-            
+
             // Add event listeners for quick action cards
             document.getElementById('create-tournament').addEventListener('click', () => {
               showAdminPage('tournaments');
               // Would typically show a tournament creation form
               showNotification("Tournament creation coming soon", "info");
             });
-            
+
             document.getElementById('add-user').addEventListener('click', () => {
               showAdminPage('users');
               // Would typically show a user creation form
               showNotification("User creation coming soon", "info");
             });
-            
+
             document.getElementById('edit-rewards').addEventListener('click', () => {
               showAdminPage('rewards');
             });
-            
+
             document.getElementById('site-settings').addEventListener('click', () => {
               showAdminPage('settings');
             });
@@ -1855,7 +1873,7 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           `;
-          
+
           document.getElementById('back-to-home').addEventListener('click', () => {
             renderMainContent('home');
           });
@@ -1872,13 +1890,13 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         </div>
       `;
-      
+
       document.getElementById('back-to-home').addEventListener('click', () => {
         renderMainContent('home');
       });
     });
   }
-  
+
   // Function to load admin dashboard stats
   function loadAdminStats() {
     return new Promise((resolve, reject) => {
@@ -1891,7 +1909,7 @@ document.addEventListener('DOMContentLoaded', function() {
         recentUsers: [],
         tournaments: []
       };
-      
+
       // Get total users count and recent users
       db.collection('users').get().then(snapshot => {
         stats.totalUsers = snapshot.size;
@@ -1899,18 +1917,18 @@ document.addEventListener('DOMContentLoaded', function() {
         let todayUsers = 0;
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        
+
         // Process users for recent list and stats
         const recentUsers = [];
         snapshot.forEach(doc => {
           const userData = doc.data();
           totalPoints += userData.points || 0;
-          
+
           // Check if user joined today
           if (userData.joinDate && userData.joinDate.toDate() >= today) {
             todayUsers++;
           }
-          
+
           // Add to recent users array (limited to 5)
           if (recentUsers.length < 5) {
             recentUsers.push({
@@ -1919,15 +1937,15 @@ document.addEventListener('DOMContentLoaded', function() {
             });
           }
         });
-        
+
         stats.pointsDistributed = totalPoints;
         stats.newUsers = todayUsers;
         stats.recentUsers = recentUsers;
-        
+
         // Get tournaments
         db.collection('tournaments').get().then(snapshot => {
           stats.activeTournaments = snapshot.size;
-          
+
           // Process tournaments for the list
           const tournaments = [];
           snapshot.forEach(doc => {
@@ -1937,9 +1955,9 @@ document.addEventListener('DOMContentLoaded', function() {
               id: doc.id
             });
           });
-          
+
           stats.tournaments = tournaments.slice(0, 5); // Limit to 5 tournaments
-          
+
           resolve(stats);
         }).catch(reject);
       }).catch(reject);
@@ -2238,18 +2256,18 @@ document.addEventListener('DOMContentLoaded', function() {
   // Professional Authentication Modal
   function showAuthModal() {
     console.log("Show Authentication Modal");
-    
+
     // Check if modal already exists
     let modal = document.getElementById('authModal');
-    
+
     // Remove existing modal if present to avoid conflicts
     if (modal) {
-      document.body.removeChild(modal);
+      modal.remove();
     }
-    
-    // Create a new auth modal
+
+    // Create a new auth modal with proper display style
     const modalHTML = `
-      <div id="authModal" class="auth-modal">
+      <div id="authModal" class="auth-modal" style="display: flex;">
         <div class="auth-modal-content">
           <div class="auth-modal-header">
             <h2><i class="fas fa-trophy"></i> Tournament Hub</h2>
@@ -2331,17 +2349,17 @@ document.addEventListener('DOMContentLoaded', function() {
     // Create the modal element
     const modalElement = document.createElement('div');
     modalElement.innerHTML = modalHTML;
-    
+
     // Append the modal to the body directly
     document.body.appendChild(modalElement.firstElementChild);
-    
+
     // Get the newly created modal (after it's definitely in the DOM)
     modal = document.getElementById('authModal');
-    
+
     if (modal) {
       // Show the modal
       modal.style.display = 'flex';
-      
+
       // Set up the event listeners
       setTimeout(() => {
         setupAuthModalEvents();
@@ -2357,6 +2375,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!modal) {
       console.error('Auth modal not found in the DOM');
       showNotification("Authentication system error. Please refresh the page and try again.", "error");
+      // Try to create modal again
+      setTimeout(() => {
+        showAuthModal();
+      }, 100);
       return;
     }
 
@@ -2384,7 +2406,7 @@ document.addEventListener('DOMContentLoaded', function() {
           modal.querySelectorAll('.auth-tab-btn').forEach(function(b) {
             b.classList.remove('active');
           });
-          
+
           modal.querySelectorAll('.auth-tab-content').forEach(function(c) {
             c.classList.remove('active');
           });
@@ -2393,12 +2415,12 @@ document.addEventListener('DOMContentLoaded', function() {
           btn.classList.add('active');
 
           // Show corresponding content
-          const tabName = btn.getAttribute('data-tab');
+          const tabName = btn.getAttribute`data-tab');
           const tabContent = modal.querySelector(`#${tabName}-tab`);
           if (tabContent) {
             tabContent.classList.add('active');
           }
-          
+
           // Hide any error messages when switching tabs
           const errorElements = modal.querySelectorAll('.auth-error');
           errorElements.forEach(el => el.classList.add('hidden'));
@@ -2413,12 +2435,12 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         const emailInput = modal.querySelector('#login-tab input[name="email"]');
         const email = emailInput ? emailInput.value.trim() : '';
-        
+
         if (!email) {
           showAuthError('login', 'Please enter your email address first');
           return;
         }
-        
+
         // Send password reset email
         firebase.auth().sendPasswordResetEmail(email)
           .then(() => {
@@ -2439,29 +2461,29 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         const emailInput = loginForm.querySelector('input[name="email"]');
         const passwordInput = loginForm.querySelector('input[name="password"]');
-        
+
         if (!emailInput || !passwordInput) {
           showAuthError('login', "Email or password field not found");
           return;
         }
-        
+
         const email = emailInput.value.trim();
         const password = passwordInput.value;
-        
+
         if (!email || !password) {
           showAuthError('login', "Please enter both email and password");
           return;
         }
-        
+
         // Show loading state
         const submitBtn = loginForm.querySelector('button[type="submit"]');
         const originalText = submitBtn.innerHTML;
         submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Signing in...';
         submitBtn.disabled = true;
-        
+
         // Clear any previous errors
         hideAuthError('login');
-        
+
         // Sign in with email and password
         signInWithEmailPassword(email, password)
           .then(() => {
@@ -2472,7 +2494,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Reset button
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
-            
+
             // Show error in the form
             showAuthError('login', getAuthErrorMessage(error.code));
           });
@@ -2488,41 +2510,41 @@ document.addEventListener('DOMContentLoaded', function() {
         const emailInput = registerForm.querySelector('input[name="email"]');
         const passwordInput = registerForm.querySelector('input[name="password"]');
         const confirmPasswordInput = registerForm.querySelector('input[name="confirm-password"]');
-        
+
         if (!usernameInput || !emailInput || !passwordInput || !confirmPasswordInput) {
           showAuthError('register', "One or more registration fields not found");
           return;
         }
-        
+
         const username = usernameInput.value.trim();
         const email = emailInput.value.trim();
         const password = passwordInput.value;
         const confirmPassword = confirmPasswordInput.value;
-        
+
         if (!username || !email || !password || !confirmPassword) {
           showAuthError('register', "Please fill in all fields");
           return;
         }
-        
+
         if (password !== confirmPassword) {
           showAuthError('register', "Passwords do not match!");
           return;
         }
-        
+
         if (password.length < 6) {
           showAuthError('register', "Password must be at least 6 characters");
           return;
         }
-        
+
         // Show loading state
         const submitBtn = registerForm.querySelector('button[type="submit"]');
         const originalText = submitBtn.innerHTML;
         submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Creating account...';
         submitBtn.disabled = true;
-        
+
         // Clear any previous errors
         hideAuthError('register');
-        
+
         // Create user with email and password
         createUserWithEmailPassword(email, password, username)
           .then(() => {
@@ -2533,7 +2555,7 @@ document.addEventListener('DOMContentLoaded', function() {
             // Reset button
             submitBtn.innerHTML = originalText;
             submitBtn.disabled = false;
-            
+
             // Show error in the form
             showAuthError('register', getAuthErrorMessage(error.code));
           });
@@ -2555,7 +2577,7 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     }
   }
-  
+
   // Helper functions for auth errors
   function showAuthError(tab, message) {
     const errorElement = document.getElementById(`${tab}-error`);
@@ -2567,14 +2589,14 @@ document.addEventListener('DOMContentLoaded', function() {
       showNotification(message, "error");
     }
   }
-  
+
   function hideAuthError(tab) {
     const errorElement = document.getElementById(`${tab}-error`);
     if (errorElement) {
       errorElement.classList.add('hidden');
     }
   }
-  
+
   function getAuthErrorMessage(errorCode) {
     switch(errorCode) {
       case 'auth/invalid-login-credentials':
@@ -2595,7 +2617,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return `Authentication error: ${errorCode}`;
     }
   }
-  
+
   // New function to sign in with email and password
   function signInWithEmailPassword(email, password) {
     return new Promise((resolve, reject) => {
@@ -2612,7 +2634,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
   }
-  
+
   // New function to create user with email and password
   function createUserWithEmailPassword(email, password, displayName) {
     return new Promise((resolve, reject) => {
@@ -2620,7 +2642,7 @@ document.addEventListener('DOMContentLoaded', function() {
         .then((userCredential) => {
           console.log('Email registration successful');
           const user = userCredential.user;
-          
+
           // Update profile with displayName
           return user.updateProfile({
             displayName: displayName,
@@ -2667,22 +2689,22 @@ document.addEventListener('DOMContentLoaded', function() {
 // Tournament Card Enhancements - Countdown Timer
 function setupTournamentCountdowns() {
   const countdownElements = document.querySelectorAll('.tournament-countdown');
-  
+
   if (countdownElements.length === 0) return;
-  
+
   countdownElements.forEach(element => {
     const targetDate = new Date(element.getAttribute('data-date'));
-    
+
     // Update the countdown every second
     const countdownInterval = setInterval(() => {
       const now = new Date().getTime();
       const distance = targetDate - now;
-      
+
       // If the countdown is over
       if (distance < 0) {
         clearInterval(countdownInterval);
         element.innerHTML = '<i class="fas fa-play-circle"></i> Tournament Started!';
-        
+
         // Optionally update the status badge
         const card = element.closest('.tournament-card');
         if (card) {
@@ -2695,13 +2717,13 @@ function setupTournamentCountdowns() {
         }
         return;
       }
-      
+
       // Time calculations
       const days = Math.floor(distance / (1000 * 60 * 60 * 24));
       const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
       const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-      
+
       // Display the result
       if (days > 0) {
         element.innerHTML = `<i class="far fa-clock"></i> Starts in: ${days}d ${hours}h ${minutes}m`;
@@ -2715,16 +2737,16 @@ function setupTournamentCountdowns() {
 // Function to update participants progress bar
 function updateParticipantsProgress() {
   const progressBars = document.querySelectorAll('.participants-progress');
-  
+
   progressBars.forEach(progressBar => {
     const bar = progressBar.querySelector('.participants-bar');
     const current = parseInt(progressBar.getAttribute('data-current') || 0);
     const max = parseInt(progressBar.getAttribute('data-max') || 100);
-    
+
     if (bar && !isNaN(current) && !isNaN(max) && max > 0) {
       const percentage = Math.min(100, (current / max) * 100);
       bar.style.width = `${percentage}%`;
-      
+
       // Color coding based on fill level
       if (percentage > 80) {
         bar.style.background = 'linear-gradient(90deg, #FF9800, #F44336)';
@@ -2741,10 +2763,10 @@ function createEnhancedTournamentCard(tournamentData) {
   const now = new Date();
   const isUpcoming = startDate > now;
   const isOngoing = tournamentData.status === 'ongoing';
-  
+
   let statusClass = isUpcoming ? 'upcoming' : (isOngoing ? 'ongoing' : 'completed');
   let statusText = isUpcoming ? 'Upcoming' : (isOngoing ? 'Ongoing' : 'Completed');
-  
+
   const card = document.createElement('div');
   card.className = 'tournament-card';
   card.innerHTML = `
@@ -2755,32 +2777,32 @@ function createEnhancedTournamentCard(tournamentData) {
          alt="${tournamentData.name}" class="tournament-image">
     <div class="tournament-details">
       <h3 class="tournament-title">${tournamentData.name}</h3>
-      
+
       ${isUpcoming ? 
         `<div class="tournament-countdown" data-date="${startDate.toISOString()}">
            <i class="far fa-clock"></i> Loading...
          </div>` : ''
       }
-      
+
       <div class="tournament-info">
         <span class="tournament-date">
           <i class="far fa-calendar-alt"></i> ${startDate.toLocaleDateString()}
         </span>
       </div>
-      
+
       <div class="tournament-game">
         <i class="fas fa-gamepad"></i> ${tournamentData.game || 'Battle Royale'}
       </div>
-      
+
       <div class="tournament-participants">
         <span><i class="fas fa-users"></i> ${tournamentData.participants}/${tournamentData.maxParticipants}</span>
         <div class="participants-progress" data-current="${tournamentData.participants}" data-max="${tournamentData.maxParticipants}">
           <div class="participants-bar"></div>
         </div>
       </div>
-      
+
       <div class="tournament-prize">Prize: ${tournamentData.prizePool} points</div>
-      
+
       <div class="tournament-entry">
         <span class="entry-fee">Entry: ${tournamentData.entryFee} points</span>
         <button class="btn btn-primary tournament-join-btn" 
@@ -2792,63 +2814,8 @@ function createEnhancedTournamentCard(tournamentData) {
       </div>
     </div>
   `;
-  
-  return card;
-}
 
-// Call this function to enhance existing tournament cards on the page
-function enhanceExistingTournamentCards() {
-  const tournamentCards = document.querySelectorAll('.tournament-card');
-  
-  tournamentCards.forEach(card => {
-    // Add countdown timer for upcoming tournaments
-    const statusBadge = card.querySelector('.tournament-status');
-    if (statusBadge && (statusBadge.classList.contains('upcoming') || statusBadge.textContent.includes('Upcoming'))) {
-      const detailsContainer = card.querySelector('.tournament-details');
-      if (detailsContainer) {
-        const titleElement = detailsContainer.querySelector('.tournament-title');
-        if (titleElement) {
-          // Create a countdown element and insert after the title
-          const countdownElement = document.createElement('div');
-          countdownElement.className = 'tournament-countdown';
-          countdownElement.setAttribute('data-date', new Date(Date.now() + 172800000).toISOString()); // Example: 2 days from now
-          countdownElement.innerHTML = '<i class="far fa-clock"></i> Loading...';
-          
-          titleElement.insertAdjacentElement('afterend', countdownElement);
-        }
-      }
-    }
-    
-    // Add participants progress bar if not present
-    const entryFeeElement = card.querySelector('.entry-fee');
-    if (entryFeeElement) {
-      const tournamentInfo = card.querySelector('.tournament-info');
-      if (tournamentInfo) {
-        const playersText = tournamentInfo.textContent;
-        const playersMatch = playersText.match(/(\d+)\s+players/);
-        
-        if (playersMatch && playersMatch[1]) {
-          const participants = parseInt(playersMatch[1]);
-          const maxParticipants = participants * 2; // Just an example
-          
-          const participantsElement = document.createElement('div');
-          participantsElement.className = 'tournament-participants';
-          participantsElement.innerHTML = `
-            <span><i class="fas fa-users"></i> ${participants}/${maxParticipants}</span>
-            <div class="participants-progress" data-current="${participants}" data-max="${maxParticipants}">
-              <div class="participants-bar"></div>
-            </div>
-          `;
-          
-          tournamentInfo.insertAdjacentElement('afterend', participantsElement);
-        }
-      }
-    }
-  });
-  
-  // Initialize the enhancements
-  setupTournamentCountdowns();
-  updateParticipantsProgress();
+  return card;
 }
 
 // Call this function whenever tournament cards are loaded or updated on the page
@@ -2862,3 +2829,58 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 });
+
+// Call this function to enhance existing tournament cards on the page
+function enhanceExistingTournamentCards() {
+  const tournamentCards = document.querySelectorAll('.tournament-card');
+
+  tournamentCards.forEach(card => {
+    // Add countdown timer for upcoming tournaments
+    const statusBadge = card.querySelector('.tournament-status');
+    if (statusBadge && (statusBadge.classList.contains('upcoming') || statusBadge.textContent.includes('Upcoming'))) {
+      const detailsContainer = card.querySelector('.tournament-details');
+      if (detailsContainer) {
+        const titleElement = detailsContainer.querySelector('.tournament-title');
+        if (titleElement) {
+          // Create a countdown element and insert after the title
+          const countdownElement = document.createElement('div');
+          countdownElement.className = 'tournament-countdown';
+          countdownElement.setAttribute('data-date', new Date(Date.now() + 172800000).toISOString()); // Example: 2 days from now
+          countdownElement.innerHTML = '<i class="far fa-clock"></i> Loading...';
+
+          titleElement.insertAdjacentElement('afterend', countdownElement);
+        }
+      }
+    }
+
+    // Add participants progress bar if not present
+    const entryFeeElement = card.querySelector('.entry-fee');
+    if (entryFeeElement) {
+      const tournamentInfo = card.querySelector('.tournament-info');
+      if (tournamentInfo) {
+        const playersText = tournamentInfo.textContent;
+        const playersMatch = playersText.match(/(\d+)\s+players/);
+
+        if (playersMatch && playersMatch[1]) {
+          const participants = parseInt(playersMatch[1]);
+          const maxParticipants = participants * 2; // Just an example
+
+          const participantsElement = document.createElement('div');
+          participantsElement.className = 'tournament-participants';
+          participantsElement.innerHTML = `
+            <span><i class="fas fa-users"></i> ${participants}/${maxParticipants}</span>
+            <div class="participants-progress" data-current="${participants}" data-max="${maxParticipants}">
+              <div class="participants-bar"></div>
+            </div>
+          `;
+
+          tournamentInfo.insertAdjacentElement('afterend', participantsElement);
+        }
+      }
+    }
+  });
+
+  // Initialize the enhancements
+  setupTournamentCountdowns();
+  updateParticipantsProgress();
+}
