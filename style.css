@@ -1,4 +1,119 @@
 
+/* Auth Error Styling */
+.auth-error {
+  background-color: rgba(255, 70, 70, 0.1);
+  color: #ff4646;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+  font-size: 0.9rem;
+  border-left: 3px solid #ff4646;
+}
+
+.hidden {
+  display: none;
+}
+
+.form-helper {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  margin-top: 4px;
+  display: block;
+}
+
+.forgot-password {
+  text-align: right;
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+
+.forgot-password a {
+  color: var(--primary-color);
+  text-decoration: none;
+}
+
+.forgot-password a:hover {
+  text-decoration: underline;
+}
+
+/* Tournament Card Enhancements */
+.tournament-status {
+  padding: 5px 10px;
+  border-radius: 50px;
+  font-size: 0.8rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+}
+
+.tournament-status.upcoming {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.tournament-status.ongoing {
+  background-color: #FF5722;
+  color: white;
+}
+
+.tournament-status.completed {
+  background-color: #9E9E9E;
+  color: white;
+}
+
+.tournament-countdown {
+  font-size: 1.2rem;
+  font-weight: bold;
+  margin: 10px 0;
+  color: var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tournament-countdown i {
+  margin-right: 5px;
+}
+
+.tournament-participants {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+}
+
+.participants-progress {
+  height: 6px;
+  background-color: #eee;
+  border-radius: 10px;
+  flex-grow: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.participants-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-light), var(--primary-color));
+  border-radius: 10px;
+}
+
+.tournament-game {
+  background-color: rgba(0, 0, 0, 0.05);
+  border-radius: 20px;
+  padding: 5px 12px;
+  display: inline-flex;
+  align-items: center;
+  margin: 5px 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.tournament-game i {
+  margin-right: 5px;
+}
+
+
 :root {
   --primary-color: #6200ea;
   --primary-light: #9d46ff;

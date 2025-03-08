@@ -2266,6 +2266,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
 
             <div id="login-tab" class="auth-tab-content active">
+              <div id="login-error" class="auth-error hidden"></div>
               <form class="auth-form" id="login-form">
                 <div class="form-group">
                   <label class="form-label">Email</label>
@@ -2278,6 +2279,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button type="submit" class="btn btn-gradient btn-block">Login</button>
               </form>
 
+              <div class="forgot-password">
+                <a href="#" id="forgot-password-link">Forgot Password?</a>
+              </div>
+
               <div class="auth-divider">
                 <span>OR</span>
               </div>
@@ -2288,6 +2293,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
 
             <div id="register-tab" class="auth-tab-content">
+              <div id="register-error" class="auth-error hidden"></div>
               <form class="auth-form" id="register-form">
                 <div class="form-group">
                   <label class="form-label">Username</label>
@@ -2299,7 +2305,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 <div class="form-group">
                   <label class="form-label">Password</label>
-                  <input type="password" name="password" class="form-input" placeholder="Create a password" required>
+                  <input type="password" name="password" class="form-input" placeholder="Create a password" required minlength="6">
+                  <small class="form-helper">Password must be at least 6 characters</small>
                 </div>
                 <div class="form-group">
                   <label class="form-label">Confirm Password</label>
@@ -2336,7 +2343,9 @@ document.addEventListener('DOMContentLoaded', function() {
       modal.style.display = 'flex';
       
       // Set up the event listeners
-      setupAuthModalEvents();
+      setTimeout(() => {
+        setupAuthModalEvents();
+      }, 100); // Short delay to ensure DOM is ready
     } else {
       console.error('Failed to create auth modal');
       showNotification("An error occurred. Please try again.", "error");
@@ -2347,6 +2356,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const modal = document.getElementById('authModal');
     if (!modal) {
       console.error('Auth modal not found in the DOM');
+      showNotification("Authentication system error. Please refresh the page and try again.", "error");
       return;
     }
 
@@ -2359,7 +2369,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Close when clicking outside modal
-    document.addEventListener('click', function(e) {
+    window.addEventListener('click', function(e) {
       if (e.target === modal) {
         modal.style.display = 'none';
       }
@@ -2388,7 +2398,37 @@ document.addEventListener('DOMContentLoaded', function() {
           if (tabContent) {
             tabContent.classList.add('active');
           }
+          
+          // Hide any error messages when switching tabs
+          const errorElements = modal.querySelectorAll('.auth-error');
+          errorElements.forEach(el => el.classList.add('hidden'));
         });
+      });
+    }
+
+    // Forgot password link
+    const forgotPasswordLink = modal.querySelector('#forgot-password-link');
+    if (forgotPasswordLink) {
+      forgotPasswordLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        const emailInput = modal.querySelector('#login-tab input[name="email"]');
+        const email = emailInput ? emailInput.value.trim() : '';
+        
+        if (!email) {
+          showAuthError('login', 'Please enter your email address first');
+          return;
+        }
+        
+        // Send password reset email
+        firebase.auth().sendPasswordResetEmail(email)
+          .then(() => {
+            showNotification("Password reset email sent. Please check your inbox.", "info");
+            modal.style.display = 'none';
+          })
+          .catch((error) => {
+            console.error("Error sending reset email:", error);
+            showAuthError('login', `Error: ${error.message}`);
+          });
       });
     }
 
@@ -2401,7 +2441,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const passwordInput = loginForm.querySelector('input[name="password"]');
         
         if (!emailInput || !passwordInput) {
-          showNotification("Email or password input not found", "error");
+          showAuthError('login', "Email or password field not found");
           return;
         }
         
@@ -2409,13 +2449,33 @@ document.addEventListener('DOMContentLoaded', function() {
         const password = passwordInput.value;
         
         if (!email || !password) {
-          showNotification("Please enter both email and password", "error");
+          showAuthError('login', "Please enter both email and password");
           return;
         }
         
+        // Show loading state
+        const submitBtn = loginForm.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Signing in...';
+        submitBtn.disabled = true;
+        
+        // Clear any previous errors
+        hideAuthError('login');
+        
         // Sign in with email and password
-        signInWithEmailPassword(email, password);
-        modal.style.display = 'none';
+        signInWithEmailPassword(email, password)
+          .then(() => {
+            // Success is handled in the signInWithEmailPassword function
+            modal.style.display = 'none';
+          })
+          .catch(error => {
+            // Reset button
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            
+            // Show error in the form
+            showAuthError('login', getAuthErrorMessage(error.code));
+          });
       });
     }
 
@@ -2430,7 +2490,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const confirmPasswordInput = registerForm.querySelector('input[name="confirm-password"]');
         
         if (!usernameInput || !emailInput || !passwordInput || !confirmPasswordInput) {
-          showNotification("One or more registration inputs not found", "error");
+          showAuthError('register', "One or more registration fields not found");
           return;
         }
         
@@ -2440,18 +2500,43 @@ document.addEventListener('DOMContentLoaded', function() {
         const confirmPassword = confirmPasswordInput.value;
         
         if (!username || !email || !password || !confirmPassword) {
-          showNotification("Please fill in all fields", "error");
+          showAuthError('register', "Please fill in all fields");
           return;
         }
         
         if (password !== confirmPassword) {
-          showNotification("Passwords do not match!", "error");
+          showAuthError('register', "Passwords do not match!");
           return;
         }
         
+        if (password.length < 6) {
+          showAuthError('register', "Password must be at least 6 characters");
+          return;
+        }
+        
+        // Show loading state
+        const submitBtn = registerForm.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Creating account...';
+        submitBtn.disabled = true;
+        
+        // Clear any previous errors
+        hideAuthError('register');
+        
         // Create user with email and password
-        createUserWithEmailPassword(email, password, username);
-        modal.style.display = 'none';
+        createUserWithEmailPassword(email, password, username)
+          .then(() => {
+            // Success is handled in the createUserWithEmailPassword function
+            modal.style.display = 'none';
+          })
+          .catch(error => {
+            // Reset button
+            submitBtn.innerHTML = originalText;
+            submitBtn.disabled = false;
+            
+            // Show error in the form
+            showAuthError('register', getAuthErrorMessage(error.code));
+          });
       });
     }
 
@@ -2460,7 +2545,6 @@ document.addEventListener('DOMContentLoaded', function() {
     if (googleSignInBtn) {
       googleSignInBtn.addEventListener('click', function() {
         signInWithGoogle();
-        modal.style.display = 'none';
       });
     }
 
@@ -2468,46 +2552,94 @@ document.addEventListener('DOMContentLoaded', function() {
     if (googleSignUpBtn) {
       googleSignUpBtn.addEventListener('click', function() {
         signInWithGoogle();
-        modal.style.display = 'none';
       });
+    }
+  }
+  
+  // Helper functions for auth errors
+  function showAuthError(tab, message) {
+    const errorElement = document.getElementById(`${tab}-error`);
+    if (errorElement) {
+      errorElement.textContent = message;
+      errorElement.classList.remove('hidden');
+    } else {
+      // Fallback to notification if error element not found
+      showNotification(message, "error");
+    }
+  }
+  
+  function hideAuthError(tab) {
+    const errorElement = document.getElementById(`${tab}-error`);
+    if (errorElement) {
+      errorElement.classList.add('hidden');
+    }
+  }
+  
+  function getAuthErrorMessage(errorCode) {
+    switch(errorCode) {
+      case 'auth/invalid-login-credentials':
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+        return "Invalid email or password. Please try again.";
+      case 'auth/email-already-in-use':
+        return "This email is already registered. Try logging in instead.";
+      case 'auth/weak-password':
+        return "Password is too weak. Use at least 6 characters.";
+      case 'auth/invalid-email':
+        return "Please enter a valid email address.";
+      case 'auth/network-request-failed':
+        return "Network error. Please check your connection and try again.";
+      case 'auth/too-many-requests':
+        return "Too many failed login attempts. Please try again later.";
+      default:
+        return `Authentication error: ${errorCode}`;
     }
   }
   
   // New function to sign in with email and password
   function signInWithEmailPassword(email, password) {
-    auth.signInWithEmailAndPassword(email, password)
-      .then((userCredential) => {
-        console.log('Email sign in successful');
-        const user = userCredential.user;
-        showNotification(`Welcome back, ${user.displayName || email}!`, "success");
-      })
-      .catch((error) => {
-        console.error('Email sign in error:', error);
-        showNotification(`Login failed: ${error.message}`, "error");
-      });
+    return new Promise((resolve, reject) => {
+      auth.signInWithEmailAndPassword(email, password)
+        .then((userCredential) => {
+          console.log('Email sign in successful');
+          const user = userCredential.user;
+          showNotification(`Welcome back, ${user.displayName || email}!`, "success");
+          resolve(userCredential);
+        })
+        .catch((error) => {
+          console.error('Email sign in error:', error);
+          reject(error);
+        });
+    });
   }
   
   // New function to create user with email and password
   function createUserWithEmailPassword(email, password, displayName) {
-    auth.createUserWithEmailAndPassword(email, password)
-      .then((userCredential) => {
-        console.log('Email registration successful');
-        const user = userCredential.user;
-        
-        // Update profile with displayName
-        return user.updateProfile({
-          displayName: displayName,
-          photoURL: `https://ui-avatars.com/api/?name=${displayName}&background=random&color=fff`
-        }).then(() => {
-          // Create user document
-          createUserDocument(user);
-          showNotification(`Welcome to Tournament Hub, ${displayName}!`, "success");
+    return new Promise((resolve, reject) => {
+      auth.createUserWithEmailAndPassword(email, password)
+        .then((userCredential) => {
+          console.log('Email registration successful');
+          const user = userCredential.user;
+          
+          // Update profile with displayName
+          return user.updateProfile({
+            displayName: displayName,
+            photoURL: `https://ui-avatars.com/api/?name=${displayName}&background=random&color=fff`
+          }).then(() => {
+            // Create user document
+            createUserDocument(user);
+            showNotification(`Welcome to Tournament Hub, ${displayName}!`, "success");
+            resolve(userCredential);
+          }).catch(error => {
+            console.error('Error updating profile:', error);
+            reject(error);
+          });
+        })
+        .catch((error) => {
+          console.error('Email registration error:', error);
+          reject(error);
         });
-      })
-      .catch((error) => {
-        console.error('Email registration error:', error);
-        showNotification(`Registration failed: ${error.message}`, "error");
-      });
+    });
   }
 
   // Function to create admin account (if it doesn't exist)
@@ -2529,5 +2661,204 @@ document.addEventListener('DOMContentLoaded', function() {
           console.error('Error creating admin account:', error);
         }
       });
+  }
+});
+
+// Tournament Card Enhancements - Countdown Timer
+function setupTournamentCountdowns() {
+  const countdownElements = document.querySelectorAll('.tournament-countdown');
+  
+  if (countdownElements.length === 0) return;
+  
+  countdownElements.forEach(element => {
+    const targetDate = new Date(element.getAttribute('data-date'));
+    
+    // Update the countdown every second
+    const countdownInterval = setInterval(() => {
+      const now = new Date().getTime();
+      const distance = targetDate - now;
+      
+      // If the countdown is over
+      if (distance < 0) {
+        clearInterval(countdownInterval);
+        element.innerHTML = '<i class="fas fa-play-circle"></i> Tournament Started!';
+        
+        // Optionally update the status badge
+        const card = element.closest('.tournament-card');
+        if (card) {
+          const statusBadge = card.querySelector('.tournament-status');
+          if (statusBadge) {
+            statusBadge.textContent = 'Ongoing';
+            statusBadge.classList.remove('upcoming');
+            statusBadge.classList.add('ongoing');
+          }
+        }
+        return;
+      }
+      
+      // Time calculations
+      const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+      
+      // Display the result
+      if (days > 0) {
+        element.innerHTML = `<i class="far fa-clock"></i> Starts in: ${days}d ${hours}h ${minutes}m`;
+      } else {
+        element.innerHTML = `<i class="far fa-clock"></i> Starts in: ${hours}h ${minutes}m ${seconds}s`;
+      }
+    }, 1000);
+  });
+}
+
+// Function to update participants progress bar
+function updateParticipantsProgress() {
+  const progressBars = document.querySelectorAll('.participants-progress');
+  
+  progressBars.forEach(progressBar => {
+    const bar = progressBar.querySelector('.participants-bar');
+    const current = parseInt(progressBar.getAttribute('data-current') || 0);
+    const max = parseInt(progressBar.getAttribute('data-max') || 100);
+    
+    if (bar && !isNaN(current) && !isNaN(max) && max > 0) {
+      const percentage = Math.min(100, (current / max) * 100);
+      bar.style.width = `${percentage}%`;
+      
+      // Color coding based on fill level
+      if (percentage > 80) {
+        bar.style.background = 'linear-gradient(90deg, #FF9800, #F44336)';
+      } else if (percentage > 50) {
+        bar.style.background = 'linear-gradient(90deg, #4CAF50, #8BC34A)';
+      }
+    }
+  });
+}
+
+// Example function to update a tournament card with modern features
+function createEnhancedTournamentCard(tournamentData) {
+  const startDate = new Date(tournamentData.startDate);
+  const now = new Date();
+  const isUpcoming = startDate > now;
+  const isOngoing = tournamentData.status === 'ongoing';
+  
+  let statusClass = isUpcoming ? 'upcoming' : (isOngoing ? 'ongoing' : 'completed');
+  let statusText = isUpcoming ? 'Upcoming' : (isOngoing ? 'Ongoing' : 'Completed');
+  
+  const card = document.createElement('div');
+  card.className = 'tournament-card';
+  card.innerHTML = `
+    <div class="tournament-banner">
+      <span class="tournament-status ${statusClass}">${statusText}</span>
+    </div>
+    <img src="${tournamentData.image || 'https://images.unsplash.com/photo-1511512578047-dfb367046420?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80'}" 
+         alt="${tournamentData.name}" class="tournament-image">
+    <div class="tournament-details">
+      <h3 class="tournament-title">${tournamentData.name}</h3>
+      
+      ${isUpcoming ? 
+        `<div class="tournament-countdown" data-date="${startDate.toISOString()}">
+           <i class="far fa-clock"></i> Loading...
+         </div>` : ''
+      }
+      
+      <div class="tournament-info">
+        <span class="tournament-date">
+          <i class="far fa-calendar-alt"></i> ${startDate.toLocaleDateString()}
+        </span>
+      </div>
+      
+      <div class="tournament-game">
+        <i class="fas fa-gamepad"></i> ${tournamentData.game || 'Battle Royale'}
+      </div>
+      
+      <div class="tournament-participants">
+        <span><i class="fas fa-users"></i> ${tournamentData.participants}/${tournamentData.maxParticipants}</span>
+        <div class="participants-progress" data-current="${tournamentData.participants}" data-max="${tournamentData.maxParticipants}">
+          <div class="participants-bar"></div>
+        </div>
+      </div>
+      
+      <div class="tournament-prize">Prize: ${tournamentData.prizePool} points</div>
+      
+      <div class="tournament-entry">
+        <span class="entry-fee">Entry: ${tournamentData.entryFee} points</span>
+        <button class="btn btn-primary tournament-join-btn" 
+                data-tournament-id="${tournamentData.id}" 
+                data-entry-fee="${tournamentData.entryFee}"
+                ${!isUpcoming ? 'disabled' : ''}>
+          ${isUpcoming ? 'Join Tournament' : (isOngoing ? 'Ongoing' : 'Completed')}
+        </button>
+      </div>
+    </div>
+  `;
+  
+  return card;
+}
+
+// Call this function to enhance existing tournament cards on the page
+function enhanceExistingTournamentCards() {
+  const tournamentCards = document.querySelectorAll('.tournament-card');
+  
+  tournamentCards.forEach(card => {
+    // Add countdown timer for upcoming tournaments
+    const statusBadge = card.querySelector('.tournament-status');
+    if (statusBadge && (statusBadge.classList.contains('upcoming') || statusBadge.textContent.includes('Upcoming'))) {
+      const detailsContainer = card.querySelector('.tournament-details');
+      if (detailsContainer) {
+        const titleElement = detailsContainer.querySelector('.tournament-title');
+        if (titleElement) {
+          // Create a countdown element and insert after the title
+          const countdownElement = document.createElement('div');
+          countdownElement.className = 'tournament-countdown';
+          countdownElement.setAttribute('data-date', new Date(Date.now() + 172800000).toISOString()); // Example: 2 days from now
+          countdownElement.innerHTML = '<i class="far fa-clock"></i> Loading...';
+          
+          titleElement.insertAdjacentElement('afterend', countdownElement);
+        }
+      }
+    }
+    
+    // Add participants progress bar if not present
+    const entryFeeElement = card.querySelector('.entry-fee');
+    if (entryFeeElement) {
+      const tournamentInfo = card.querySelector('.tournament-info');
+      if (tournamentInfo) {
+        const playersText = tournamentInfo.textContent;
+        const playersMatch = playersText.match(/(\d+)\s+players/);
+        
+        if (playersMatch && playersMatch[1]) {
+          const participants = parseInt(playersMatch[1]);
+          const maxParticipants = participants * 2; // Just an example
+          
+          const participantsElement = document.createElement('div');
+          participantsElement.className = 'tournament-participants';
+          participantsElement.innerHTML = `
+            <span><i class="fas fa-users"></i> ${participants}/${maxParticipants}</span>
+            <div class="participants-progress" data-current="${participants}" data-max="${maxParticipants}">
+              <div class="participants-bar"></div>
+            </div>
+          `;
+          
+          tournamentInfo.insertAdjacentElement('afterend', participantsElement);
+        }
+      }
+    }
+  });
+  
+  // Initialize the enhancements
+  setupTournamentCountdowns();
+  updateParticipantsProgress();
+}
+
+// Call this function whenever tournament cards are loaded or updated on the page
+document.addEventListener('DOMContentLoaded', function() {
+  // Add event listener to initialize tournament enhancements when showing the tournaments page
+  const tournamentLink = document.querySelector('.nav-link[data-page="tournaments"]');
+  if (tournamentLink) {
+    tournamentLink.addEventListener('click', function() {
+      // Set a small timeout to ensure the tournament page has been rendered
+      setTimeout(enhanceExistingTournamentCards, 300);
+    });
   }
 });
