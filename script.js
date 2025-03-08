@@ -46,6 +46,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Initialize the app UI
   function initializeApp() {
     const appContainer = document.getElementById('app');
+    if (!appContainer) return; // Safety check
 
     // Create navigation bar
     const navbar = document.createElement('nav');
@@ -64,12 +65,16 @@ document.addEventListener('DOMContentLoaded', function() {
         </ul>
         <div class="user-controls">
           <div id="auth-buttons">
-            <button id="login-button" class="btn btn-primary"><i class="fas fa-sign-in-alt"></i> Sign In</button>
+            <button id="login-button" class="btn btn-gradient"><i class="fas fa-gamepad"></i> Join Now</button>
           </div>
           <div id="user-profile" class="hidden">
+            <div class="user-points">
+              <i class="fas fa-coins"></i> <span id="user-points-display">0</span>
+            </div>
             <img id="user-avatar" class="user-avatar" src="" alt="User Avatar">
             <div id="user-dropdown" class="hidden">
               <a href="#" data-page="profile"><i class="fas fa-user"></i> My Profile</a>
+              <a href="#" data-page="history"><i class="fas fa-history"></i> Tournament History</a>
               <a href="#" id="admin-panel-link" class="hidden" data-page="admin"><i class="fas fa-cog"></i> Admin Panel</a>
               <a href="#" id="logout-button"><i class="fas fa-sign-out-alt"></i> Logout</a>
             </div>
@@ -85,67 +90,162 @@ document.addEventListener('DOMContentLoaded', function() {
     appContainer.appendChild(mainContent);
 
     // Add event listeners for navigation
-    document.querySelectorAll('.nav-link').forEach(link => {
-      link.addEventListener('click', function(e) {
-        e.preventDefault();
-        const page = this.getAttribute('data-page');
-        renderMainContent(page);
+    const navLinks = document.querySelectorAll('.nav-link');
+    if (navLinks) {
+      navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          const page = this.getAttribute('data-page');
+          renderMainContent(page);
+        });
       });
-    });
+    }
 
     // Add event listener for login button
-    document.getElementById('login-button').addEventListener('click', function() {
-      showAuthModal();
-    });
+    const loginButton = document.getElementById('login-button');
+    if (loginButton) {
+      loginButton.addEventListener('click', function() {
+        showAuthModal();
+      });
+    }
 
     // Add event listener for logout button
-    document.getElementById('logout-button').addEventListener('click', function(e) {
-      e.preventDefault();
-      auth.signOut().then(() => {
-        console.log('User signed out');
-      }).catch((error) => {
-        console.error('Sign out error:', error);
+    const logoutButton = document.getElementById('logout-button');
+    if (logoutButton) {
+      logoutButton.addEventListener('click', function(e) {
+        e.preventDefault();
+        auth.signOut().then(() => {
+          console.log('User signed out');
+          showNotification("You've been logged out successfully", "info");
+        }).catch((error) => {
+          console.error('Sign out error:', error);
+        });
       });
-    });
+    }
 
     // Add event listener for user avatar (to show dropdown)
     const userAvatar = document.getElementById('user-avatar');
     if (userAvatar) {
       userAvatar.addEventListener('click', function() {
         const dropdown = document.getElementById('user-dropdown');
-        dropdown.classList.toggle('hidden');
+        if (dropdown) {
+          dropdown.classList.toggle('hidden');
+        }
       });
-    }
 
-    // Close dropdown when clicking outside
-    document.addEventListener('click', function(e) {
-      if (e.target !== userAvatar && !userAvatar.contains(e.target)) {
+      // Close dropdown when clicking outside
+      document.addEventListener('click', function(e) {
         const dropdown = document.getElementById('user-dropdown');
-        if (!dropdown.classList.contains('hidden')) {
+        if (dropdown && !dropdown.classList.contains('hidden') && e.target !== userAvatar && !userAvatar.contains(e.target)) {
           dropdown.classList.add('hidden');
         }
-      }
-    });
+      });
+    }
+    
+    // Add footer
+    const footer = document.createElement('footer');
+    footer.className = 'site-footer';
+    footer.innerHTML = `
+      <div class="container">
+        <div class="footer-content">
+          <div class="footer-logo">
+            <i class="fas fa-trophy"></i> Tournament Hub
+          </div>
+          <div class="footer-links">
+            <div class="footer-section">
+              <h3>Quick Links</h3>
+              <ul>
+                <li><a href="#" data-page="home">Home</a></li>
+                <li><a href="#" data-page="tournaments">Tournaments</a></li>
+                <li><a href="#" data-page="rewards">Rewards</a></li>
+                <li><a href="#" data-page="vip">VIP Membership</a></li>
+              </ul>
+            </div>
+            <div class="footer-section">
+              <h3>Support</h3>
+              <ul>
+                <li><a href="#">Contact Us</a></li>
+                <li><a href="#">FAQ</a></li>
+                <li><a href="#">Terms of Service</a></li>
+                <li><a href="#">Privacy Policy</a></li>
+              </ul>
+            </div>
+            <div class="footer-section">
+              <h3>Connect</h3>
+              <div class="social-icons">
+                <a href="#"><i class="fab fa-twitter"></i></a>
+                <a href="#"><i class="fab fa-discord"></i></a>
+                <a href="#"><i class="fab fa-youtube"></i></a>
+                <a href="#"><i class="fab fa-instagram"></i></a>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="footer-bottom">
+          <p>&copy; ${new Date().getFullYear()} Tournament Hub. All rights reserved.</p>
+        </div>
+      </div>
+    `;
+    appContainer.appendChild(footer);
+    
+    // Setup footer link events
+    const footerLinks = document.querySelectorAll('.footer-links a[data-page]');
+    if (footerLinks) {
+      footerLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+          e.preventDefault();
+          const page = this.getAttribute('data-page');
+          renderMainContent(page);
+        });
+      });
+    }
   }
 
   function signInWithGoogle() {
     const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider)
-      .then((result) => {
-        console.log('Google sign in successful');
-        // The signed-in user info.
+    
+    // Try to use signInWithRedirect if on Replit (to handle the unauthorized domain issue)
+    try {
+      auth.signInWithRedirect(provider)
+        .then(() => {
+          // This won't be called immediately due to redirect
+          console.log('Google sign in redirect successful');
+        })
+        .catch((error) => {
+          console.error('Google sign in error:', error);
+          
+          // If we get an unauthorized domain error, show a helpful message
+          if (error.code === 'auth/unauthorized-domain') {
+            showNotification("To use Google Sign-in: Add this domain to your Firebase Console authorized domains list", "warning");
+            // Fall back to email/password authentication
+            showAuthModal();
+          } else {
+            showNotification(`Sign in failed: ${error.message}`, "error");
+          }
+        });
+    } catch (e) {
+      console.error('Google sign in setup error:', e);
+      showNotification("Google sign-in is currently unavailable. Please use email/password instead.", "warning");
+    }
+    
+    // Setup redirect result handler
+    auth.getRedirectResult().then((result) => {
+      if (result.user) {
+        console.log('Google sign in successful after redirect');
         const user = result.user;
-
+        
         // Check if this is a new user (first time signing in)
-        const isNewUser = result.additionalUserInfo.isNewUser;
+        const isNewUser = result.additionalUserInfo?.isNewUser;
         if (isNewUser) {
           // Create a user document in Firestore
           createUserDocument(user);
         }
-      })
-      .catch((error) => {
-        console.error('Google sign in error:', error);
-      });
+        
+        showNotification(`Welcome, ${user.displayName}!`, "success");
+      }
+    }).catch((error) => {
+      console.error('Google redirect result error:', error);
+    });
   }
 
   function createUserDocument(user) {
@@ -186,17 +286,44 @@ document.addEventListener('DOMContentLoaded', function() {
     const authButtons = document.getElementById('auth-buttons');
     const userProfile = document.getElementById('user-profile');
     const adminPanelLink = document.getElementById('admin-panel-link');
+    const userPointsDisplay = document.getElementById('user-points-display');
 
-    if (userAvatar) userAvatar.src = user.photoURL || 'https://via.placeholder.com/40';
+    if (userAvatar) userAvatar.src = user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random&color=fff`;
     if (authButtons) authButtons.classList.add('hidden');
     if (userProfile) userProfile.classList.remove('hidden');
-    if (adminPanelLink && user.email && (
-        user.email === 'Jitenadminpanelaccess@gmail.com' || 
-        user.email === 'karateboyjitenderprajapat@gmail.com' || 
-        user.email.endsWith('@admin.tournamenthub.com')
-      )) {
+    
+    // Check if user is admin
+    const isAdmin = user.email && (
+      user.email === 'Jitenadminpanelaccess@gmail.com' || 
+      user.email === 'karateboyjitenderprajapat@gmail.com' || 
+      user.email.endsWith('@admin.tournamenthub.com')
+    );
+    
+    if (adminPanelLink && isAdmin) {
       adminPanelLink.classList.remove('hidden');
     }
+
+    // Get and display user points
+    db.collection('users').doc(user.uid).get().then((doc) => {
+      if (doc.exists) {
+        const userData = doc.data();
+        if (userPointsDisplay) {
+          userPointsDisplay.textContent = userData.points || 0;
+        }
+        
+        // If this is an admin logging in, check and update admin status
+        if (isAdmin && !userData.isAdmin) {
+          db.collection('users').doc(user.uid).update({
+            isAdmin: true
+          }).then(() => {
+            console.log('User updated with admin privileges');
+            showNotification('Admin privileges granted', 'success');
+          });
+        }
+      }
+    }).catch(err => {
+      console.error('Error loading user data:', err);
+    });
 
     // Track daily login
     trackDailyLogin(user.uid);
@@ -920,18 +1047,30 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderAdminPanel() {
     const mainContent = document.getElementById('main-content');
+    if (!mainContent) return;
 
     // Check if current user is admin
     const user = auth.currentUser;
     if (!user) return;
 
+    // Show loading state
+    mainContent.innerHTML = `
+      <div class="container text-center">
+        <div class="loader"></div>
+        <p>Loading admin panel...</p>
+      </div>
+    `;
+
     // Get user data to verify admin status
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
         const userData = doc.data();
+        const isAdmin = userData.isAdmin || 
+                       user.email === 'Jitenadminpanelaccess@gmail.com' || 
+                       user.email === 'karateboyjitenderprajapat@gmail.com' ||
+                       user.email.endsWith('@admin.tournamenthub.com');
 
-        // Verify admin status - only specific email can access
-        if (userData.isAdmin || user.email === 'Jitenadminpanelaccess@gmail.com') {
+        if (isAdmin) {
           // Set admin flag if not already set
           if (!userData.isAdmin) {
             db.collection('users').doc(user.uid).update({
@@ -939,127 +1078,257 @@ document.addEventListener('DOMContentLoaded', function() {
             });
           }
 
-          // Render admin panel
-          mainContent.innerHTML = `
-            <div class="admin-layout">
-              <div class="admin-sidebar">
-                <div class="admin-logo">
-                  <i class="fas fa-trophy"></i> Admin Panel
+          // Load stats for dashboard
+          loadAdminStats().then(stats => {
+            // Render admin panel with real stats
+            mainContent.innerHTML = `
+              <div class="admin-layout">
+                <div class="admin-sidebar">
+                  <div class="admin-logo">
+                    <i class="fas fa-trophy"></i> Admin Panel
+                  </div>
+                  <div class="admin-user">
+                    <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Admin'}&background=random&color=fff`}" alt="Admin Avatar">
+                    <div class="admin-user-info">
+                      <div class="admin-user-name">${userData.displayName || user.email}</div>
+                      <div class="admin-user-role">Administrator</div>
+                    </div>
+                  </div>
+                  <ul class="admin-nav">
+                    <li class="admin-nav-item">
+                      <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
+                        <i class="fas fa-tachometer-alt"></i> Dashboard
+                      </a>
+                    </li>
+                    <li class="admin-nav-item">
+                      <a href="#" class="admin-nav-link" data-admin-page="users">
+                        <i class="fas fa-users"></i> User Management
+                      </a>
+                    </li>
+                    <li class="admin-nav-item">
+                      <a href="#" class="admin-nav-link" data-admin-page="tournaments">
+                        <i class="fas fa-trophy"></i> Tournament Management
+                      </a>
+                    </li>
+                    <li class="admin-nav-item">
+                      <a href="#" class="admin-nav-link" data-admin-page="rewards">
+                        <i class="fas fa-gift"></i> Rewards & Earnings
+                      </a>
+                    </li>
+                    <li class="admin-nav-item">
+                      <a href="#" class="admin-nav-link" data-admin-page="ads">
+                        <i class="fas fa-ad"></i> Ad Management
+                      </a>
+                    </li>
+                    <li class="admin-nav-item">
+                      <a href="#" class="admin-nav-link" data-admin-page="settings">
+                        <i class="fas fa-cog"></i> Settings
+                      </a>
+                    </li>
+                    <li class="admin-nav-item admin-nav-back">
+                      <a href="#" class="admin-nav-link" id="back-to-site">
+                        <i class="fas fa-arrow-left"></i> Back to Site
+                      </a>
+                    </li>
+                  </ul>
                 </div>
-                <ul class="admin-nav">
-                  <li class="admin-nav-item">
-                    <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
-                      <i class="fas fa-tachometer-alt"></i> Dashboard
-                    </a>
-                  </li>
-                  <li class="admin-nav-item">
-                    <a href="#" class="admin-nav-link" data-admin-page="users">
-                      <i class="fas fa-users"></i> User Management
-                    </a>
-                  </li>
-                  <li class="admin-nav-item">
-                    <a href="#" class="admin-nav-link" data-admin-page="tournaments">
-                      <i class="fas fa-trophy"></i> Tournament Management
-                    </a>
-                  </li>
-                  <li class="admin-nav-item">
-                    <a href="#" class="admin-nav-link" data-admin-page="rewards">
-                      <i class="fas fa-gift"></i> Rewards & Earnings
-                    </a>
-                  </li>
-                  <li class="admin-nav-item">
-                    <a href="#" class="admin-nav-link" data-admin-page="ads">
-                      <i class="fas fa-ad"></i> Ad Management
-                    </a>
-                  </li>
-                  <li class="admin-nav-item">
-                    <a href="#" class="admin-nav-link" data-admin-page="settings">
-                      <i class="fas fa-cog"></i> Settings
-                    </a>
-                  </li>
-                </ul>
-              </div>
-              <div class="admin-content">
-                <div id="admin-dashboard-page">
-                  <div class="admin-header">
-                    <h1 class="admin-title">Dashboard</h1>
-                    <div class="admin-actions">
-                      <button class="btn btn-primary">
-                        <i class="fas fa-sync-alt"></i> Refresh Data
-                      </button>
+                <div class="admin-content">
+                  <div id="admin-dashboard-page">
+                    <div class="admin-header">
+                      <h1 class="admin-title">Dashboard</h1>
+                      <div class="admin-actions">
+                        <button class="btn btn-primary" id="refresh-admin-data">
+                          <i class="fas fa-sync-alt"></i> Refresh Data
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div class="stats-grid mb-4">
-                    <div class="stat-box">
-                      <i class="fas fa-users"></i>
-                      <div class="value">0</div>
-                      <div class="label">Total Users</div>
+                    <div class="stats-grid mb-4">
+                      <div class="stat-box">
+                        <i class="fas fa-users"></i>
+                        <div class="value">${stats.totalUsers}</div>
+                        <div class="label">Total Users</div>
+                      </div>
+                      <div class="stat-box">
+                        <i class="fas fa-trophy"></i>
+                        <div class="value">${stats.activeTournaments}</div>
+                        <div class="label">Active Tournaments</div>
+                      </div>
+                      <div class="stat-box">
+                        <i class="fas fa-coins"></i>
+                        <div class="value">${stats.pointsDistributed}</div>
+                        <div class="label">Points Distributed</div>
+                      </div>
+                      <div class="stat-box">
+                        <i class="fas fa-user-plus"></i>
+                        <div class="value">${stats.newUsers}</div>
+                        <div class="label">New Users (Today)</div>
+                      </div>
                     </div>
-                    <div class="stat-box">
-                      <i class="fas fa-trophy"></i>
-                      <div class="value">0</div>
-                      <div class="label">Active Tournaments</div>
-                    </div>
-                    <div class="stat-box">
-                      <i class="fas fa-coins"></i>
-                      <div class="value">0</div>
-                      <div class="label">Points Distributed</div>
-                    </div>
-                    <div class="stat-box">
-                      <i class="fas fa-user-plus"></i>
-                      <div class="value">0</div>
-                      <div class="label">New Users (Today)</div>
-                    </div>
-                  </div>
 
-                  <div class="admin-card">
-                    <h2>Recent Users</h2>
-                    <table class="admin-table">
-                      <thead>
-                        <tr>
-                          <th>User</th>
-                          <th>Join Date</th>
-                          <th>Points</th>
-                          <th>Status</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td colspan="5" class="text-center">No users found</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                    <div class="admin-quick-actions mb-4">
+                      <h2 class="mb-2">Quick Actions</h2>
+                      <div class="quick-actions-grid">
+                        <div class="quick-action-card" id="create-tournament">
+                          <i class="fas fa-trophy"></i>
+                          <span>Create Tournament</span>
+                        </div>
+                        <div class="quick-action-card" id="add-user">
+                          <i class="fas fa-user-plus"></i>
+                          <span>Add User</span>
+                        </div>
+                        <div class="quick-action-card" id="edit-rewards">
+                          <i class="fas fa-gift"></i>
+                          <span>Edit Rewards</span>
+                        </div>
+                        <div class="quick-action-card" id="site-settings">
+                          <i class="fas fa-cog"></i>
+                          <span>Site Settings</span>
+                        </div>
+                      </div>
+                    </div>
 
-                  <div class="admin-card">
-                    <h2>Upcoming Tournaments</h2>
-                    <table class="admin-table">
-                      <thead>
-                        <tr>
-                          <th>Tournament</th>
-                          <th>Start Date</th>
-                          <th>Entry Fee</th>
-                          <th>Prize Pool</th>
-                          <th>Participants</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td colspan="6" class="text-center">No tournaments found</td>
-                        </tr>
-                      </tbody>
-                    </table>
+                    <div class="admin-card">
+                      <div class="admin-card-header">
+                        <h2>Recent Users</h2>
+                        <button class="btn btn-sm btn-primary" id="view-all-users">View All</button>
+                      </div>
+                      <div class="admin-table-container">
+                        <table class="admin-table">
+                          <thead>
+                            <tr>
+                              <th>User</th>
+                              <th>Join Date</th>
+                              <th>Points</th>
+                              <th>Status</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody id="recent-users-table">
+                            ${stats.recentUsers.length > 0 ? 
+                              stats.recentUsers.map(user => `
+                                <tr>
+                                  <td>
+                                    <div class="user-cell">
+                                      <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random&color=fff`}" alt="User Avatar">
+                                      <div>
+                                        <div class="user-name">${user.displayName}</div>
+                                        <div class="user-email">${user.email}</div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td>${new Date(user.joinDate.toDate()).toLocaleDateString()}</td>
+                                  <td>${user.points}</td>
+                                  <td><span class="status-badge ${user.isVIP ? 'vip' : 'standard'}">${user.isVIP ? 'VIP' : 'Standard'}</span></td>
+                                  <td>
+                                    <div class="table-actions">
+                                      <button class="btn btn-sm btn-primary edit-user" data-user-id="${user.uid}"><i class="fas fa-edit"></i></button>
+                                      <button class="btn btn-sm ${user.isBanned ? 'btn-success' : 'btn-danger'} toggle-ban" data-user-id="${user.uid}">
+                                        <i class="fas ${user.isBanned ? 'fa-user-check' : 'fa-user-slash'}"></i>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              `).join('') : 
+                              '<tr><td colspan="5" class="text-center">No users found</td></tr>'
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    <div class="admin-card">
+                      <div class="admin-card-header">
+                        <h2>Upcoming Tournaments</h2>
+                        <button class="btn btn-sm btn-primary" id="view-all-tournaments">View All</button>
+                      </div>
+                      <div class="admin-table-container">
+                        <table class="admin-table">
+                          <thead>
+                            <tr>
+                              <th>Tournament</th>
+                              <th>Start Date</th>
+                              <th>Entry Fee</th>
+                              <th>Prize Pool</th>
+                              <th>Participants</th>
+                              <th>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody id="tournaments-table">
+                            ${stats.tournaments.length > 0 ? 
+                              stats.tournaments.map(tournament => `
+                                <tr>
+                                  <td>${tournament.name}</td>
+                                  <td>${new Date(tournament.startDate).toLocaleDateString()}</td>
+                                  <td>${tournament.entryFee} points</td>
+                                  <td>${tournament.prizePool} points</td>
+                                  <td>${tournament.participants}/${tournament.maxParticipants}</td>
+                                  <td>
+                                    <div class="table-actions">
+                                      <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-edit"></i></button>
+                                      <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-trash"></i></button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              `).join('') :
+                              '<tr><td colspan="6" class="text-center">No tournaments found</td></tr>'
+                            }
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          `;
+            `;
 
-          // Setup admin panel event listeners
-          setupAdminPanelEvents();
+            // Setup admin panel event listeners
+            setupAdminPanelEvents();
+            
+            // Add event listener for "Back to Site" button
+            document.getElementById('back-to-site').addEventListener('click', (e) => {
+              e.preventDefault();
+              renderMainContent('home');
+            });
+            
+            // Add event listener for "Refresh Data" button
+            document.getElementById('refresh-admin-data').addEventListener('click', () => {
+              loadAdminStats().then(updatedStats => {
+                // Update dashboard stats
+                document.querySelectorAll('.stat-box .value')[0].textContent = updatedStats.totalUsers;
+                document.querySelectorAll('.stat-box .value')[1].textContent = updatedStats.activeTournaments;
+                document.querySelectorAll('.stat-box .value')[2].textContent = updatedStats.pointsDistributed;
+                document.querySelectorAll('.stat-box .value')[3].textContent = updatedStats.newUsers;
+                
+                // Update tables as needed
+                showNotification("Dashboard data refreshed", "success");
+              });
+            });
+            
+            // Add event listeners for quick action cards
+            document.getElementById('create-tournament').addEventListener('click', () => {
+              showAdminPage('tournaments');
+              // Would typically show a tournament creation form
+              showNotification("Tournament creation coming soon", "info");
+            });
+            
+            document.getElementById('add-user').addEventListener('click', () => {
+              showAdminPage('users');
+              // Would typically show a user creation form
+              showNotification("User creation coming soon", "info");
+            });
+            
+            document.getElementById('edit-rewards').addEventListener('click', () => {
+              showAdminPage('rewards');
+            });
+            
+            document.getElementById('site-settings').addEventListener('click', () => {
+              showAdminPage('settings');
+            });
+          }).catch(err => {
+            console.error("Error loading admin stats:", err);
+            showNotification("Error loading admin dashboard", "error");
+          });
         } else {
           // Not an admin
           mainContent.innerHTML = `
@@ -1068,11 +1337,98 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h3><i class="fas fa-exclamation-triangle"></i> Access Denied</h3>
                 <p>You do not have permission to access the admin panel.</p>
                 <p>Please contact the site administrator if you believe this is an error.</p>
+                <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
               </div>
             </div>
           `;
+          
+          document.getElementById('back-to-home').addEventListener('click', () => {
+            renderMainContent('home');
+          });
         }
       }
+    }).catch(err => {
+      console.error("Error checking admin status:", err);
+      mainContent.innerHTML = `
+        <div class="container">
+          <div class="alert error">
+            <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
+            <p>There was an error loading the admin panel. Please try again later.</p>
+            <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+          </div>
+        </div>
+      `;
+      
+      document.getElementById('back-to-home').addEventListener('click', () => {
+        renderMainContent('home');
+      });
+    });
+  }
+  
+  // Function to load admin dashboard stats
+  function loadAdminStats() {
+    return new Promise((resolve, reject) => {
+      // Initialize stats object with default values
+      const stats = {
+        totalUsers: 0,
+        activeTournaments: 0,
+        pointsDistributed: 0,
+        newUsers: 0,
+        recentUsers: [],
+        tournaments: []
+      };
+      
+      // Get total users count and recent users
+      db.collection('users').get().then(snapshot => {
+        stats.totalUsers = snapshot.size;
+        let totalPoints = 0;
+        let todayUsers = 0;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        // Process users for recent list and stats
+        const recentUsers = [];
+        snapshot.forEach(doc => {
+          const userData = doc.data();
+          totalPoints += userData.points || 0;
+          
+          // Check if user joined today
+          if (userData.joinDate && userData.joinDate.toDate() >= today) {
+            todayUsers++;
+          }
+          
+          // Add to recent users array (limited to 5)
+          if (recentUsers.length < 5) {
+            recentUsers.push({
+              ...userData,
+              uid: doc.id
+            });
+          }
+        });
+        
+        stats.pointsDistributed = totalPoints;
+        stats.newUsers = todayUsers;
+        stats.recentUsers = recentUsers;
+        
+        // Get tournaments
+        db.collection('tournaments').get().then(snapshot => {
+          stats.activeTournaments = snapshot.size;
+          
+          // Process tournaments for the list
+          const tournaments = [];
+          snapshot.forEach(doc => {
+            const tournamentData = doc.data();
+            tournaments.push({
+              ...tournamentData,
+              id: doc.id
+            });
+          });
+          
+          stats.tournaments = tournaments.slice(0, 5); // Limit to 5 tournaments
+          
+          resolve(stats);
+        }).catch(reject);
+      }).catch(reject);
     });
   }
 
@@ -1379,6 +1735,10 @@ document.addEventListener('DOMContentLoaded', function() {
               <span class="auth-close">&times;</span>
             </div>
             <div class="auth-modal-body">
+              <div class="auth-welcome">
+                <h3>Join the Tournament Community</h3>
+                <p>Sign up to participate in tournaments, earn rewards, and compete with players worldwide.</p>
+              </div>
               <div class="auth-tabs">
                 <button class="auth-tab-btn active" data-tab="login">Login</button>
                 <button class="auth-tab-btn" data-tab="register">Register</button>
@@ -1388,13 +1748,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 <form class="auth-form" id="login-form">
                   <div class="form-group">
                     <label class="form-label">Email</label>
-                    <input type="email" class="form-input" placeholder="Enter your email" required>
+                    <input type="email" name="email" class="form-input" placeholder="Enter your email" required>
                   </div>
                   <div class="form-group">
                     <label class="form-label">Password</label>
-                    <input type="password" class="form-input" placeholder="Enter your password" required>
+                    <input type="password" name="password" class="form-input" placeholder="Enter your password" required>
                   </div>
-                  <button type="submit" class="btn btn-primary btn-block">Login</button>
+                  <button type="submit" class="btn btn-gradient btn-block">Login</button>
                 </form>
 
                 <div class="auth-divider">
@@ -1402,7 +1762,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
 
                 <button id="google-signin-btn" class="btn btn-google btn-block">
-                  <i class="fab fa-google"></i> Sign in with Google
+                  <i class="fab fa-google"></i> Continue with Google
                 </button>
               </div>
 
@@ -1410,21 +1770,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 <form class="auth-form" id="register-form">
                   <div class="form-group">
                     <label class="form-label">Username</label>
-                    <input type="text" class="form-input" placeholder="Choose a username" required>
+                    <input type="text" name="username" class="form-input" placeholder="Choose a username" required>
                   </div>
                   <div class="form-group">
                     <label class="form-label">Email</label>
-                    <input type="email" class="form-input" placeholder="Enter your email" required>
+                    <input type="email" name="email" class="form-input" placeholder="Enter your email" required>
                   </div>
                   <div class="form-group">
                     <label class="form-label">Password</label>
-                    <input type="password" class="form-input" placeholder="Create a password" required>
+                    <input type="password" name="password" class="form-input" placeholder="Create a password" required>
                   </div>
                   <div class="form-group">
                     <label class="form-label">Confirm Password</label>
-                    <input type="password" class="form-input" placeholder="Confirm your password" required>
+                    <input type="password" name="confirm-password" class="form-input" placeholder="Confirm your password" required>
                   </div>
-                  <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+                  <button type="submit" class="btn btn-gradient btn-block">Create Account</button>
                 </form>
 
                 <div class="auth-divider">
@@ -1444,22 +1804,27 @@ document.addEventListener('DOMContentLoaded', function() {
       const modalContainer = document.createElement('div');
       modalContainer.innerHTML = modalHTML;
       document.body.appendChild(modalContainer.firstChild);
-
-      // Set up event listeners for the modal
-      setupAuthModalEvents();
     }
 
     // Show the modal
-    document.getElementById('authModal').style.display = 'flex';
+    const modal = document.getElementById('authModal');
+    modal.style.display = 'flex';
+    
+    // Set up event listeners for the modal (after it's in the DOM)
+    setupAuthModalEvents();
   }
 
   function setupAuthModalEvents() {
     const modal = document.getElementById('authModal');
+    if (!modal) return; // Safety check
 
     // Close button functionality
-    document.querySelector('.auth-close').addEventListener('click', () => {
-      modal.style.display = 'none';
-    });
+    const closeButton = modal.querySelector('.auth-close');
+    if (closeButton) {
+      closeButton.addEventListener('click', () => {
+        modal.style.display = 'none';
+      });
+    }
 
     // Close when clicking outside modal
     window.addEventListener('click', (e) => {
@@ -1469,44 +1834,115 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Tab switching
-    document.querySelectorAll('.auth-tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        // Remove active class from all tabs and contents
-        document.querySelectorAll('.auth-tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.auth-tab-content').forEach(c => c.classList.remove('active'));
+    const tabButtons = modal.querySelectorAll('.auth-tab-btn');
+    if (tabButtons) {
+      tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+          // Remove active class from all tabs and contents
+          modal.querySelectorAll('.auth-tab-btn').forEach(b => b.classList.remove('active'));
+          modal.querySelectorAll('.auth-tab-content').forEach(c => c.classList.remove('active'));
 
-        // Add active class to clicked tab
-        btn.classList.add('active');
+          // Add active class to clicked tab
+          btn.classList.add('active');
 
-        // Show corresponding content
-        const tabName = btn.getAttribute('data-tab');
-        document.getElementById(`${tabName}-tab`).classList.add('active');
+          // Show corresponding content
+          const tabName = btn.getAttribute('data-tab');
+          const tabContent = modal.querySelector(`#${tabName}-tab`);
+          if (tabContent) {
+            tabContent.classList.add('active');
+          }
+        });
       });
-    });
+    }
 
-    // Form submission (placeholder)
-    document.getElementById('login-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      // In the future, implement email/password login
-      showNotification("Email/password login coming soon!", "info");
-    });
+    // Form submission for email/password login
+    const loginForm = modal.querySelector('#login-form');
+    if (loginForm) {
+      loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const email = loginForm.querySelector('input[name="email"]').value;
+        const password = loginForm.querySelector('input[name="password"]').value;
+        
+        // Sign in with email and password
+        signInWithEmailPassword(email, password);
+        modal.style.display = 'none';
+      });
+    }
 
-    document.getElementById('register-form').addEventListener('submit', (e) => {
-      e.preventDefault();
-      // In the future, implement email/password registration
-      showNotification("Email/password registration coming soon!", "info");
-    });
+    // Form submission for email/password registration
+    const registerForm = modal.querySelector('#register-form');
+    if (registerForm) {
+      registerForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const username = registerForm.querySelector('input[name="username"]').value;
+        const email = registerForm.querySelector('input[name="email"]').value;
+        const password = registerForm.querySelector('input[name="password"]').value;
+        const confirmPassword = registerForm.querySelector('input[name="confirm-password"]').value;
+        
+        if (password !== confirmPassword) {
+          showNotification("Passwords do not match!", "error");
+          return;
+        }
+        
+        // Create user with email and password
+        createUserWithEmailPassword(email, password, username);
+        modal.style.display = 'none';
+      });
+    }
 
     // Google sign in buttons
-    document.getElementById('google-signin-btn').addEventListener('click', () => {
-      signInWithGoogle();
-      modal.style.display = 'none';
-    });
+    const googleSignInBtn = modal.querySelector('#google-signin-btn');
+    if (googleSignInBtn) {
+      googleSignInBtn.addEventListener('click', () => {
+        signInWithGoogle();
+        modal.style.display = 'none';
+      });
+    }
 
-    document.getElementById('google-signup-btn').addEventListener('click', () => {
-      signInWithGoogle();
-      modal.style.display = 'none';
-    });
+    const googleSignUpBtn = modal.querySelector('#google-signup-btn');
+    if (googleSignUpBtn) {
+      googleSignUpBtn.addEventListener('click', () => {
+        signInWithGoogle();
+        modal.style.display = 'none';
+      });
+    }
+  }
+  
+  // New function to sign in with email and password
+  function signInWithEmailPassword(email, password) {
+    auth.signInWithEmailAndPassword(email, password)
+      .then((userCredential) => {
+        console.log('Email sign in successful');
+        const user = userCredential.user;
+        showNotification(`Welcome back, ${user.displayName || email}!`, "success");
+      })
+      .catch((error) => {
+        console.error('Email sign in error:', error);
+        showNotification(`Login failed: ${error.message}`, "error");
+      });
+  }
+  
+  // New function to create user with email and password
+  function createUserWithEmailPassword(email, password, displayName) {
+    auth.createUserWithEmailAndPassword(email, password)
+      .then((userCredential) => {
+        console.log('Email registration successful');
+        const user = userCredential.user;
+        
+        // Update profile with displayName
+        return user.updateProfile({
+          displayName: displayName,
+          photoURL: `https://ui-avatars.com/api/?name=${displayName}&background=random&color=fff`
+        }).then(() => {
+          // Create user document
+          createUserDocument(user);
+          showNotification(`Welcome to Tournament Hub, ${displayName}!`, "success");
+        });
+      })
+      .catch((error) => {
+        console.error('Email registration error:', error);
+        showNotification(`Registration failed: ${error.message}`, "error");
+      });
   }
 
   // Function to create admin account (if it doesn't exist)
