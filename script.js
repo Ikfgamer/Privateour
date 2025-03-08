@@ -1,4 +1,3 @@
-
 // Firebase Configuration and Initialization
 document.addEventListener('DOMContentLoaded', function() {
   // Hide loading screen after everything is loaded
@@ -36,7 +35,7 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log("User is signed out");
       renderAuthContent();
     }
-    
+
     // Hide loading screen after auth state is determined
     loadingScreen.classList.add('hidden');
   });
@@ -44,28 +43,33 @@ document.addEventListener('DOMContentLoaded', function() {
   // Initialize the app UI
   function initializeApp() {
     const appContainer = document.getElementById('app');
-    
+
     // Create navigation bar
     const navbar = document.createElement('nav');
     navbar.className = 'navbar';
     navbar.innerHTML = `
-      <a href="#" class="nav-logo">Tournament Hub</a>
-      <ul class="nav-links">
-        <li class="nav-item"><a href="#" class="nav-link" data-page="home">Home</a></li>
-        <li class="nav-item"><a href="#" class="nav-link" data-page="tournaments">Tournaments</a></li>
-        <li class="nav-item"><a href="#" class="nav-link" data-page="rewards">Rewards</a></li>
-        <li class="nav-item"><a href="#" class="nav-link" data-page="vip">VIP</a></li>
-        <li class="nav-item"><a href="#" class="nav-link" data-page="community">Community</a></li>
-      </ul>
-      <div class="user-controls">
-        <div id="auth-buttons">
-          <button id="login-button" class="btn btn-primary">Sign In</button>
-        </div>
-        <div id="user-profile" class="hidden">
-          <img id="user-avatar" class="user-avatar" src="" alt="User Avatar">
-          <div id="user-dropdown" class="hidden">
-            <a href="#" data-page="profile">My Profile</a>
-            <a href="#" id="logout-button">Logout</a>
+      <div class="navbar-container">
+        <a href="#" class="nav-logo">
+          <i class="fas fa-trophy"></i> Tournament Hub
+        </a>
+        <ul class="nav-links">
+          <li class="nav-item"><a href="#" class="nav-link" data-page="home">Home</a></li>
+          <li class="nav-item"><a href="#" class="nav-link" data-page="tournaments">Tournaments</a></li>
+          <li class="nav-item"><a href="#" class="nav-link" data-page="rewards">Rewards</a></li>
+          <li class="nav-item"><a href="#" class="nav-link" data-page="vip">VIP</a></li>
+          <li class="nav-item"><a href="#" class="nav-link" data-page="community">Community</a></li>
+        </ul>
+        <div class="user-controls">
+          <div id="auth-buttons">
+            <button id="login-button" class="btn btn-primary"><i class="fas fa-sign-in-alt"></i> Sign In</button>
+          </div>
+          <div id="user-profile" class="hidden">
+            <img id="user-avatar" class="user-avatar" src="" alt="User Avatar">
+            <div id="user-dropdown" class="hidden">
+              <a href="#" data-page="profile"><i class="fas fa-user"></i> My Profile</a>
+              <a href="#" id="admin-panel-link" class="hidden" data-page="admin"><i class="fas fa-cog"></i> Admin Panel</a>
+              <a href="#" id="logout-button"><i class="fas fa-sign-out-alt"></i> Logout</a>
+            </div>
           </div>
         </div>
       </div>
@@ -88,7 +92,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add event listener for login button
     document.getElementById('login-button').addEventListener('click', function() {
-      signInWithGoogle();
+      showAuthModal();
     });
 
     // Add event listener for logout button
@@ -128,7 +132,7 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Google sign in successful');
         // The signed-in user info.
         const user = result.user;
-        
+
         // Check if this is a new user (first time signing in)
         const isNewUser = result.additionalUserInfo.isNewUser;
         if (isNewUser) {
@@ -142,16 +146,20 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   function createUserDocument(user) {
+    // Check if user email is admin
+    const isAdmin = user.email && (user.email === 'admin@example.com' || user.email.endsWith('@admin.tournamenthub.com'));
+
     db.collection('users').doc(user.uid).set({
       uid: user.uid,
       displayName: user.displayName,
       email: user.email,
-      photoURL: user.photoURL,
+      photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random&color=fff`,
       points: 100, // Starting points
       tournaments: [],
       joinDate: firebase.firestore.FieldValue.serverTimestamp(),
       lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
       isVIP: false,
+      isAdmin: isAdmin,
       referrals: [],
       rewards: {
         dailyLogin: {
@@ -161,6 +169,9 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }).then(() => {
       console.log('User document created');
+      if (isAdmin) {
+        showNotification('Admin account detected! You have access to the admin panel.', 'success');
+      }
     }).catch((error) => {
       console.error('Error creating user document:', error);
     });
@@ -171,10 +182,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const userAvatar = document.getElementById('user-avatar');
     const authButtons = document.getElementById('auth-buttons');
     const userProfile = document.getElementById('user-profile');
-    
+    const adminPanelLink = document.getElementById('admin-panel-link');
+
     if (userAvatar) userAvatar.src = user.photoURL || 'https://via.placeholder.com/40';
     if (authButtons) authButtons.classList.add('hidden');
     if (userProfile) userProfile.classList.remove('hidden');
+    if (adminPanelLink && user.email && (user.email === 'admin@example.com' || user.email.endsWith('@admin.tournamenthub.com'))) {
+      adminPanelLink.classList.remove('hidden');
+    }
 
     // Track daily login
     trackDailyLogin(user.uid);
@@ -186,18 +201,18 @@ document.addEventListener('DOMContentLoaded', function() {
       if (doc.exists) {
         const userData = doc.data();
         const now = new Date();
-        const lastLogin = userData.rewards?.dailyLogin?.lastClaimed ? 
+        const lastLogin = userData.rewards?.dailyLogin?.lastClaimed ?
                           userData.rewards.dailyLogin.lastClaimed.toDate() : null;
-        
+
         // Check if this is a new day for login
         if (!lastLogin || !isSameDay(now, lastLogin)) {
           // Give daily login reward
           let streakDays = userData.rewards?.dailyLogin?.streakDays || 0;
           streakDays++;
-          
+
           // Calculate reward points based on streak
           const rewardPoints = 10 + Math.min(streakDays * 5, 50); // Max 60 points for 10+ day streak
-          
+
           userRef.update({
             points: firebase.firestore.FieldValue.increment(rewardPoints),
             lastLogin: firebase.firestore.FieldValue.serverTimestamp(),
@@ -222,13 +237,13 @@ document.addEventListener('DOMContentLoaded', function() {
            date1.getDate() === date2.getDate();
   }
 
-  function showNotification(message) {
+  function showNotification(message, type = 'info') {
     // Create notification element
     const notification = document.createElement('div');
-    notification.className = 'notification';
+    notification.className = `notification ${type}`;
     notification.textContent = message;
     document.body.appendChild(notification);
-    
+
     // Remove after 5 seconds
     setTimeout(() => {
       notification.remove();
@@ -295,16 +310,18 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     `;
 
-    // Add event listener for hero login button
-    document.getElementById('hero-login-button').addEventListener('click', function() {
-      signInWithGoogle();
+    // Add event listener for hero login button in renderAuthContent
+    document.addEventListener('click', function(e) {
+      if (e.target && e.target.id === 'hero-login-button') {
+        showAuthModal();
+      }
     });
   }
 
   function renderMainContent(page) {
     const mainContent = document.getElementById('main-content');
     mainContent.innerHTML = '';
-    
+
     // Highlight active nav link
     document.querySelectorAll('.nav-link').forEach(link => {
       if (link.getAttribute('data-page') === page) {
@@ -313,7 +330,7 @@ document.addEventListener('DOMContentLoaded', function() {
         link.classList.remove('active');
       }
     });
-    
+
     switch(page) {
       case 'home':
         renderHomePage();
@@ -333,6 +350,9 @@ document.addEventListener('DOMContentLoaded', function() {
       case 'profile':
         renderProfilePage();
         break;
+      case 'admin':
+        renderAdminPanel(); // Added admin panel rendering
+        break;
       default:
         renderHomePage();
     }
@@ -340,16 +360,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderHomePage() {
     const mainContent = document.getElementById('main-content');
-    
+
     // Get current user
     const user = auth.currentUser;
     if (!user) return;
-    
+
     // Get user data from Firestore
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
         const userData = doc.data();
-        
+
         mainContent.innerHTML = `
           <div class="hero">
             <h1>Welcome back, ${userData.displayName}!</h1>
@@ -378,7 +398,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="label">Referrals</div>
               </div>
             </div>
-            
+
             <h2 class="section-title">Upcoming Tournaments</h2>
             <div class="grid">
               <div class="tournament-card">
@@ -427,7 +447,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
               </div>
             </div>
-            
+
             <div class="rewards-container mt-4">
               <h2 class="section-title">Daily Rewards</h2>
               <div class="reward-item">
@@ -463,7 +483,7 @@ document.addEventListener('DOMContentLoaded', function() {
     mainContent.innerHTML = `
       <div class="container">
         <h2 class="section-title">All Tournaments</h2>
-        
+
         <div class="tournament-filters mb-3">
           <select class="form-input" style="width: auto;">
             <option value="all">All Tournaments</option>
@@ -472,7 +492,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <option value="completed">Completed</option>
           </select>
         </div>
-        
+
         <div class="grid">
           <div class="tournament-card">
             <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
@@ -574,7 +594,7 @@ document.addEventListener('DOMContentLoaded', function() {
     mainContent.innerHTML = `
       <div class="container">
         <h2 class="section-title">Earn Points & Rewards</h2>
-        
+
         <div class="rewards-container">
           <h3 class="mb-2">Daily Rewards</h3>
           <div class="reward-item">
@@ -599,7 +619,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <button class="btn btn-secondary">Watch Ad</button>
           </div>
         </div>
-        
+
         <div class="rewards-container mt-4">
           <h3 class="mb-2">Refer & Earn</h3>
           <div class="reward-item">
@@ -620,7 +640,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
           </div>
         </div>
-        
+
         <div class="rewards-container mt-4">
           <h3 class="mb-2">Tournament Achievements</h3>
           <div class="reward-item">
@@ -665,7 +685,7 @@ document.addEventListener('DOMContentLoaded', function() {
         <div class="vip-container">
           <h2 class="vip-title">VIP Membership</h2>
           <p class="vip-description">Upgrade to VIP and unlock exclusive benefits and features!</p>
-          
+
           <div class="vip-benefits">
             <div class="vip-benefit">
               <i class="fas fa-coins"></i>
@@ -688,7 +708,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <p>20% off tournament entry fees</p>
             </div>
           </div>
-          
+
           <p class="mt-3 mb-3">Available Soon</p>
         </div>
       </div>
@@ -700,7 +720,7 @@ document.addEventListener('DOMContentLoaded', function() {
     mainContent.innerHTML = `
       <div class="container">
         <h2 class="section-title">Community Hub</h2>
-        
+
         <div class="chat-container">
           <div class="chat-sidebar">
             <div style="padding: 1rem; border-bottom: 1px solid #ddd;">
@@ -735,7 +755,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <div class="message-time">45 minutes ago</div>
                 </div>
               </div>
-              <div class="message">
+              <div classdiv class="message">
                 <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
                 <div class="message-content">
                   <div class="message-sender">StrategyGuru</div>
@@ -766,7 +786,7 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
           </div>
         </div>
-        
+
         <div class="rewards-container mt-4">
           <h3 class="mb-2">Community Leaderboard</h3>
           <table class="leaderboard">
@@ -818,16 +838,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderProfilePage() {
     const mainContent = document.getElementById('main-content');
-    
+
     // Get current user
     const user = auth.currentUser;
     if (!user) return;
-    
+
     // Get user data from Firestore
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
         const userData = doc.data();
-        
+
         mainContent.innerHTML = `
           <div class="container">
             <div class="profile-container">
@@ -839,7 +859,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <p>${userData.isVIP ? '<span style="color: gold;"><i class="fas fa-crown"></i> VIP Member</span>' : 'Standard Member'}</p>
                 </div>
               </div>
-              
+
               <div class="profile-stats">
                 <div class="stat-card">
                   <div class="stat-value">${userData.points}</div>
@@ -858,7 +878,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <div class="stat-label">Login Streak</div>
                 </div>
               </div>
-              
+
               <h3 class="section-title">Your Tournament History</h3>
               <table class="leaderboard mb-4">
                 <thead>
@@ -875,7 +895,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   </tr>
                 </tbody>
               </table>
-              
+
               <h3 class="section-title">Referrals</h3>
               <div class="form-group mb-3">
                 <label class="form-label">Your Referral Link</label>
@@ -890,5 +910,22 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
       }
     });
+  }
+
+  function renderAdminPanel() {
+    const mainContent = document.getElementById('main-content');
+    mainContent.innerHTML = `
+      <div class="container">
+        <h1>Admin Panel</h1>
+        <p>This is the admin panel. You can manage users, tournaments, and rewards here.</p>
+      </div>
+    `;
+  }
+
+  // Placeholder for showAuthModal function (needs implementation)
+  function showAuthModal() {
+    // Implement your authentication modal logic here.  This is a placeholder.
+    console.log("Show Authentication Modal");
+    signInWithGoogle(); //For now, this still calls the Google Sign-In
   }
 });
