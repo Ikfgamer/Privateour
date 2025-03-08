@@ -381,7 +381,12 @@ document.addEventListener('DOMContentLoaded', function() {
       console.error('Error loading user data:', err);
       showNotification("You're currently offline. Some features may be limited.", "warning");
       
-      // Enable admin panel anyway if email matches admin pattern
+      // Set default user data for offline mode
+      if (userPointsDisplay) {
+        userPointsDisplay.textContent = "100"; // Default points for offline mode
+      }
+      
+      // Always enable admin panel for admin emails, even offline
       if (isAdmin && adminPanelLink) {
         adminPanelLink.classList.remove('hidden');
       }
@@ -526,6 +531,29 @@ document.addEventListener('DOMContentLoaded', function() {
         link.classList.remove('active');
       }
     });
+    
+    // Add horizontal tabs for main sections (WhatsApp style)
+    if (['home', 'tournaments', 'rewards', 'vip', 'community'].includes(page)) {
+      const horizontalTabs = document.createElement('div');
+      horizontalTabs.className = 'horizontal-tabs';
+      horizontalTabs.innerHTML = `
+        <div class="horizontal-tab ${page === 'home' ? 'active' : ''}" data-tab="home">Home</div>
+        <div class="horizontal-tab ${page === 'tournaments' ? 'active' : ''}" data-tab="tournaments">Tournaments</div>
+        <div class="horizontal-tab ${page === 'rewards' ? 'active' : ''}" data-tab="rewards">Rewards</div>
+        <div class="horizontal-tab ${page === 'vip' ? 'active' : ''}" data-tab="vip">VIP</div>
+        <div class="horizontal-tab ${page === 'community' ? 'active' : ''}" data-tab="community">Community</div>
+      `;
+      mainContent.appendChild(horizontalTabs);
+      
+      // Add event listeners to horizontal tabs
+      const tabs = horizontalTabs.querySelectorAll('.horizontal-tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+          const tabName = this.getAttribute('data-tab');
+          renderMainContent(tabName);
+        });
+      });
+    }
 
     switch(page) {
       case 'home':
@@ -770,15 +798,37 @@ document.addEventListener('DOMContentLoaded', function() {
         <a href="#tournaments" class="btn btn-gradient" style="font-size: 1.1rem; padding: 0.75rem 2rem; border-radius: 50px; box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);">Explore Tournaments</a>
       </div>
       
-      <!-- Rest of default homepage -->
-      <!-- Featured Tournament Banner -->
       <div class="container">
+        <div class="stats-grid mb-4">
+          <div class="stat-box">
+            <i class="fas fa-trophy"></i>
+            <div class="value">0</div>
+            <div class="label">Tournaments Won</div>
+          </div>
+          <div class="stat-box">
+            <i class="fas fa-gamepad"></i>
+            <div class="value">0</div>
+            <div class="label">Tournaments Joined</div>
+          </div>
+          <div class="stat-box">
+            <i class="fas fa-coins"></i>
+            <div class="value">100</div>
+            <div class="label">Points</div>
+          </div>
+          <div class="stat-box">
+            <i class="fas fa-users"></i>
+            <div class="value">0</div>
+            <div class="label">Referrals</div>
+          </div>
+        </div>
+
+        <!-- Tournament Overview Section (Hero Banner) -->
         <div class="tournament-banner-container mb-4">
           <div class="featured-tournament-banner">
             <div class="featured-tournament-content">
               <div class="featured-tournament-header">
                 <h2>🏆 BGMI Solo Battle – ₹5,000 Prize</h2>
-                <div class="tournament-status-badge ongoing">🔴 Ongoing</div>
+                <div class="tournament-status-badge upcoming">🟢 Upcoming</div>
               </div>
               
               <div class="tournament-countdown" data-date="${new Date(Date.now() + 3*60*60*1000 + 45*60*1000 + 12*1000).toISOString()}">
@@ -810,7 +860,55 @@ document.addEventListener('DOMContentLoaded', function() {
         <!-- Sample tournament cards -->
         <h2 class="section-title">Upcoming Tournaments</h2>
         <div class="grid">
-          <!-- Sample tournament cards here -->
+          <div class="tournament-card">
+            <div class="tournament-banner">
+              <span class="tournament-status upcoming">Upcoming</span>
+            </div>
+            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+            <div class="tournament-details">
+              <h3 class="tournament-title">Weekend Warrior Challenge</h3>
+              <div class="tournament-countdown" data-date="${new Date(Date.now() + 2*24*60*60*1000).toISOString()}">
+                <i class="far fa-clock"></i> Starts in: 2d 0h 0m
+              </div>
+              <div class="tournament-info">
+                <span class="tournament-game"><i class="fas fa-gamepad"></i> PUBG Mobile</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 64 players</span>
+              </div>
+              <div class="tournament-mode">
+                <span>Squad | TPP</span>
+              </div>
+              <div class="tournament-prize">Prize: 1000 points</div>
+              <div class="tournament-entry">
+                <span class="entry-fee">Entry: 50 points</span>
+                <button class="btn btn-primary">Join Tournament</button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="tournament-card">
+            <div class="tournament-banner">
+              <span class="tournament-status today">Today</span>
+            </div>
+            <img src="https://via.placeholder.com/300x180" alt="Tournament Image" class="tournament-image">
+            <div class="tournament-details">
+              <h3 class="tournament-title">Flash Quiz Challenge</h3>
+              <div class="tournament-countdown" data-date="${new Date(Date.now() + 5*60*60*1000).toISOString()}">
+                <i class="far fa-clock"></i> Starts in: 5h 0m 0s
+              </div>
+              <div class="tournament-info">
+                <span class="tournament-game"><i class="fas fa-gamepad"></i> COD Mobile</span>
+                <span class="tournament-players"><i class="fas fa-users"></i> 32 players</span>
+              </div>
+              <div class="tournament-mode">
+                <span>Solo | FPP</span>
+              </div>
+              <div class="tournament-prize">Prize: 500 points</div>
+              <div class="tournament-entry">
+                <span class="entry-fee">Entry: 25 points</span>
+                <button class="btn btn-primary">Join Tournament</button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1917,15 +2015,30 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    // Show loading state
-    mainContent.innerHTML = `
-      <div class="container text-center">
-        <div class="loader"></div>
-        <p>Loading admin panel...</p>
-      </div>
-    `;
+    // Set isAdmin if email matches criteria - this ensures admin access even when offline
+    const isAdmin = user.email && (
+      user.email === 'Jitenadminpanelaccess@gmail.com' || 
+      user.email === 'karateboyjitenderprajapat@gmail.com' || 
+      user.email.endsWith('@admin.tournamenthub.com')
+    );
 
-    // Get user data to verify admin status
+    if (!isAdmin) {
+      mainContent.innerHTML = `
+        <div class="container">
+          <div class="alert error">
+            <h3><i class="fas fa-exclamation-triangle"></i> Access Denied</h3>
+            <p>You do not have permission to access the admin panel.</p>
+            <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+          </div>
+        </div>
+      `;
+      document.getElementById('back-to-home').addEventListener('click', () => {
+        renderMainContent('home');
+      });
+      return;
+    }
+
+    // Try to get user data, but have fallback for offline mode
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
         const userData = doc.data();
@@ -2242,7 +2355,7 @@ document.addEventListener('DOMContentLoaded', function() {
         tournaments: []
       };
 
-      // Get total users count and recent users
+      // Try to get data from Firestore, but provide offline fallback data
       db.collection('users').get().then(snapshot => {
         stats.totalUsers = snapshot.size;
         let totalPoints = 0;
