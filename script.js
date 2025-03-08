@@ -20,8 +20,11 @@ document.addEventListener('DOMContentLoaded', function() {
   const db = firebase.firestore();
   const storage = firebase.storage();
 
-  // Initialize the UI
+  // Initialize the app UI
   initializeApp();
+
+  // Try to create admin account
+  createAdminAccount();
 
   // Authentication state observer
   auth.onAuthStateChanged(function(user) {
@@ -147,7 +150,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function createUserDocument(user) {
     // Check if user email is admin - specific admin email
-    const isAdmin = user.email && (user.email === 'Jitenadminpanelaccess@gmail.com' || user.email.endsWith('@admin.tournamenthub.com'));
+    const isAdmin = user.email && (user.email === 'Jitenadminpanelaccess@gmail.com' || user.email === 'karateboyjitenderprajapat@gmail.com' || user.email.endsWith('@admin.tournamenthub.com'));
 
     db.collection('users').doc(user.uid).set({
       uid: user.uid,
@@ -187,7 +190,11 @@ document.addEventListener('DOMContentLoaded', function() {
     if (userAvatar) userAvatar.src = user.photoURL || 'https://via.placeholder.com/40';
     if (authButtons) authButtons.classList.add('hidden');
     if (userProfile) userProfile.classList.remove('hidden');
-    if (adminPanelLink && user.email && (user.email === 'admin@example.com' || user.email.endsWith('@admin.tournamenthub.com'))) {
+    if (adminPanelLink && user.email && (
+        user.email === 'Jitenadminpanelaccess@gmail.com' || 
+        user.email === 'karateboyjitenderprajapat@gmail.com' || 
+        user.email.endsWith('@admin.tournamenthub.com')
+      )) {
       adminPanelLink.classList.remove('hidden');
     }
 
@@ -750,8 +757,7 @@ document.addEventListener('DOMContentLoaded', function() {
               <div class="message">
                 <img src="https://via.placeholder.com/40" alt="User Avatar" class="message-avatar">
                 <div class="message-content">
-                  <div class="message-sender">GamePro99</div>
-                  <div class="message-text">Anyone joining the Weekend Warrior Challenge? Looking for teammates!</div>
+                  <div class="message-sender">GamePro99</<div class="message-text">Anyone joining the Weekend Warrior Challenge? Looking for teammates!</div>
                   <div class="message-time">45 minutes ago</div>
                 </div>
               </div>
@@ -914,16 +920,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function renderAdminPanel() {
     const mainContent = document.getElementById('main-content');
-    
+
     // Check if current user is admin
     const user = auth.currentUser;
     if (!user) return;
-    
+
     // Get user data to verify admin status
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
         const userData = doc.data();
-        
+
         // Verify admin status - only specific email can access
         if (userData.isAdmin || user.email === 'Jitenadminpanelaccess@gmail.com') {
           // Set admin flag if not already set
@@ -932,7 +938,7 @@ document.addEventListener('DOMContentLoaded', function() {
               isAdmin: true
             });
           }
-          
+
           // Render admin panel
           mainContent.innerHTML = `
             <div class="admin-layout">
@@ -983,7 +989,7 @@ document.addEventListener('DOMContentLoaded', function() {
                       </button>
                     </div>
                   </div>
-                  
+
                   <div class="stats-grid mb-4">
                     <div class="stat-box">
                       <i class="fas fa-users"></i>
@@ -1006,7 +1012,7 @@ document.addEventListener('DOMContentLoaded', function() {
                       <div class="label">New Users (Today)</div>
                     </div>
                   </div>
-                  
+
                   <div class="admin-card">
                     <h2>Recent Users</h2>
                     <table class="admin-table">
@@ -1026,7 +1032,7 @@ document.addEventListener('DOMContentLoaded', function() {
                       </tbody>
                     </table>
                   </div>
-                  
+
                   <div class="admin-card">
                     <h2>Upcoming Tournaments</h2>
                     <table class="admin-table">
@@ -1051,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', function() {
               </div>
             </div>
           `;
-          
+
           // Setup admin panel event listeners
           setupAdminPanelEvents();
         } else {
@@ -1069,28 +1075,28 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   }
-  
+
   function setupAdminPanelEvents() {
     // Admin navigation
     document.querySelectorAll('.admin-nav-link').forEach(link => {
       link.addEventListener('click', function(e) {
         e.preventDefault();
-        
+
         // Remove active class from all links
         document.querySelectorAll('.admin-nav-link').forEach(l => {
           l.classList.remove('active');
         });
-        
+
         // Add active class to clicked link
         this.classList.add('active');
-        
+
         // Get page to display
         const page = this.getAttribute('data-admin-page');
         showAdminPage(page);
       });
     });
   }
-  
+
   function showAdminPage(page) {
     // Hide all admin pages
     ['dashboard', 'users', 'tournaments', 'rewards', 'ads', 'settings'].forEach(p => {
@@ -1099,7 +1105,7 @@ document.addEventListener('DOMContentLoaded', function() {
         pageElement.style.display = 'none';
       }
     });
-    
+
     // Show selected page
     const selectedPage = document.getElementById(`admin-${page}-page`);
     if (selectedPage) {
@@ -1109,11 +1115,11 @@ document.addEventListener('DOMContentLoaded', function() {
       createAdminPage(page);
     }
   }
-  
+
   function createAdminPage(page) {
     const adminContent = document.querySelector('.admin-content');
     let pageHTML = '';
-    
+
     switch (page) {
       case 'users':
         pageHTML = `
@@ -1126,7 +1132,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
               </div>
             </div>
-            
+
             <div class="admin-card">
               <div class="admin-filters mb-3">
                 <input type="text" class="form-input" placeholder="Search users..." style="width: 300px;">
@@ -1137,7 +1143,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <option value="banned">Banned Users</option>
                 </select>
               </div>
-              
+
               <table class="admin-table">
                 <thead>
                   <tr>
@@ -1160,7 +1166,7 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         `;
         break;
-        
+
       case 'tournaments':
         pageHTML = `
           <div id="admin-tournaments-page">
@@ -1172,7 +1178,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
               </div>
             </div>
-            
+
             <div class="admin-card">
               <div class="admin-filters mb-3">
                 <input type="text" class="form-input" placeholder="Search tournaments..." style="width: 300px;">
@@ -1183,7 +1189,7 @@ document.addEventListener('DOMContentLoaded', function() {
                   <option value="completed">Completed</option>
                 </select>
               </div>
-              
+
               <table class="admin-table">
                 <thead>
                   <tr>
@@ -1207,7 +1213,7 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         `;
         break;
-        
+
       case 'rewards':
         pageHTML = `
           <div id="admin-rewards-page">
@@ -1219,7 +1225,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
               </div>
             </div>
-            
+
             <div class="admin-card">
               <h2>Daily Rewards</h2>
               <table class="admin-table">
@@ -1271,7 +1277,7 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         `;
         break;
-        
+
       case 'ads':
         pageHTML = `
           <div id="admin-ads-page">
@@ -1283,7 +1289,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
               </div>
             </div>
-            
+
             <div class="admin-card">
               <h2>Ad Settings</h2>
               <div class="form-group">
@@ -1306,7 +1312,7 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         `;
         break;
-        
+
       case 'settings':
         pageHTML = `
           <div id="admin-settings-page">
@@ -1318,7 +1324,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </button>
               </div>
             </div>
-            
+
             <div class="admin-card">
               <h2>Website Settings</h2>
               <div class="form-group">
@@ -1330,7 +1336,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <textarea class="form-input" rows="3">Join tournaments, earn rewards, and compete with players worldwide.</textarea>
               </div>
             </div>
-            
+
             <div class="admin-card">
               <h2>Administrator Settings</h2>
               <div class="form-group">
@@ -1346,7 +1352,7 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         `;
         break;
-        
+
       default:
         pageHTML = `
           <div id="admin-${page}-page">
@@ -1355,14 +1361,14 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         `;
     }
-    
+
     adminContent.innerHTML += pageHTML;
   }
 
   // Professional Authentication Modal
   function showAuthModal() {
     console.log("Show Authentication Modal");
-    
+
     // Create modal if it doesn't exist
     if (!document.getElementById('authModal')) {
       const modalHTML = `
@@ -1377,7 +1383,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <button class="auth-tab-btn active" data-tab="login">Login</button>
                 <button class="auth-tab-btn" data-tab="register">Register</button>
               </div>
-              
+
               <div id="login-tab" class="auth-tab-content active">
                 <form class="auth-form" id="login-form">
                   <div class="form-group">
@@ -1390,16 +1396,16 @@ document.addEventListener('DOMContentLoaded', function() {
                   </div>
                   <button type="submit" class="btn btn-primary btn-block">Login</button>
                 </form>
-                
+
                 <div class="auth-divider">
                   <span>OR</span>
                 </div>
-                
+
                 <button id="google-signin-btn" class="btn btn-google btn-block">
                   <i class="fab fa-google"></i> Sign in with Google
                 </button>
               </div>
-              
+
               <div id="register-tab" class="auth-tab-content">
                 <form class="auth-form" id="register-form">
                   <div class="form-group">
@@ -1420,11 +1426,11 @@ document.addEventListener('DOMContentLoaded', function() {
                   </div>
                   <button type="submit" class="btn btn-primary btn-block">Create Account</button>
                 </form>
-                
+
                 <div class="auth-divider">
                   <span>OR</span>
                 </div>
-                
+
                 <button id="google-signup-btn" class="btn btn-google btn-block">
                   <i class="fab fa-google"></i> Sign up with Google
                 </button>
@@ -1433,73 +1439,94 @@ document.addEventListener('DOMContentLoaded', function() {
           </div>
         </div>
       `;
-      
+
       // Append modal to body
       const modalContainer = document.createElement('div');
       modalContainer.innerHTML = modalHTML;
       document.body.appendChild(modalContainer.firstChild);
-      
+
       // Set up event listeners for the modal
       setupAuthModalEvents();
     }
-    
+
     // Show the modal
     document.getElementById('authModal').style.display = 'flex';
   }
-  
+
   function setupAuthModalEvents() {
     const modal = document.getElementById('authModal');
-    
+
     // Close button functionality
     document.querySelector('.auth-close').addEventListener('click', () => {
       modal.style.display = 'none';
     });
-    
+
     // Close when clicking outside modal
     window.addEventListener('click', (e) => {
       if (e.target === modal) {
         modal.style.display = 'none';
       }
     });
-    
+
     // Tab switching
     document.querySelectorAll('.auth-tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         // Remove active class from all tabs and contents
         document.querySelectorAll('.auth-tab-btn').forEach(b => b.classList.remove('active'));
         document.querySelectorAll('.auth-tab-content').forEach(c => c.classList.remove('active'));
-        
+
         // Add active class to clicked tab
         btn.classList.add('active');
-        
+
         // Show corresponding content
         const tabName = btn.getAttribute('data-tab');
         document.getElementById(`${tabName}-tab`).classList.add('active');
       });
     });
-    
+
     // Form submission (placeholder)
     document.getElementById('login-form').addEventListener('submit', (e) => {
       e.preventDefault();
       // In the future, implement email/password login
       showNotification("Email/password login coming soon!", "info");
     });
-    
+
     document.getElementById('register-form').addEventListener('submit', (e) => {
       e.preventDefault();
       // In the future, implement email/password registration
       showNotification("Email/password registration coming soon!", "info");
     });
-    
+
     // Google sign in buttons
     document.getElementById('google-signin-btn').addEventListener('click', () => {
       signInWithGoogle();
       modal.style.display = 'none';
     });
-    
+
     document.getElementById('google-signup-btn').addEventListener('click', () => {
       signInWithGoogle();
       modal.style.display = 'none';
     });
+  }
+
+  // Function to create admin account (if it doesn't exist)
+  function createAdminAccount() {
+    const adminEmail = 'karateboyjitenderprajapat@gmail.com';
+    const adminPassword = 'Selfdefence2010';
+
+    auth.createUserWithEmailAndPassword(adminEmail, adminPassword)
+      .then((userCredential) => {
+        const user = userCredential.user;
+        console.log('Admin account created:', user.uid);
+        // Additional setup for admin account, if needed
+        createUserDocument(user); // Add this user to firestore and mark as admin.
+      })
+      .catch((error) => {
+        if (error.code === 'auth/email-already-in-use') {
+          console.log('Admin account already exists.');
+        } else {
+          console.error('Error creating admin account:', error);
+        }
+      });
   }
 });
