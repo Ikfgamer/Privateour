@@ -36,20 +36,20 @@ try {
   db = firebase.firestore();
   storage = firebase.storage();
   
-  // Set offline/online cache config for better offline experience
+  // Set cache config to prioritize online mode
   db.settings({
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
     ignoreUndefinedProperties: true,
     merge: true
   });
   
-  // Enable network first, then set up persistence
+  // Always start with network mode first
   db.enableNetwork()
     .then(() => {
       console.log("Firebase network enabled successfully");
       dbConnectionStatus = true;
       
-      // Enable offline persistence - wrapped in a try block
+      // Enable offline persistence as fallback - wrapped in a try block
       try {
         db.enablePersistence({
           synchronizeTabs: true
@@ -63,10 +63,24 @@ try {
       } catch (err) {
         console.error("Error enabling persistence:", err);
       }
+      
+      // Check connectivity immediately to confirm we can reach database
+      checkDatabaseConnectivity().then(isConnected => {
+        if (isConnected) {
+          console.log("Database is reachable, we're online");
+        } else {
+          console.log("Database unreachable despite network being enabled");
+          // Try again after a short delay
+          setTimeout(() => db.enableNetwork(), 2000);
+        }
+      });
     })
     .catch(err => {
       console.error("Error enabling network:", err);
       dbConnectionStatus = false;
+      
+      // Try again after a short delay
+      setTimeout(() => db.enableNetwork(), 2000);
     });
 } catch (err) {
   console.error("Firebase initialization error:", err);
@@ -160,7 +174,12 @@ document.addEventListener('DOMContentLoaded', function() {
       return Promise.resolve(false);
     }
     
-    // Increase timeout for better connectivity check
+    // First make sure network is enabled
+    db.enableNetwork().catch(err => {
+      console.error("Error enabling network:", err);
+    });
+    
+    // Shorter timeout for faster connectivity check
     return Promise.race([
       db.collection('users').limit(1).get()
         .then(() => {
@@ -169,11 +188,17 @@ document.addEventListener('DOMContentLoaded', function() {
             // If we were previously disconnected, notify the user
             dbConnectionStatus = true;
             showNotification('Database connection restored!', 'success');
+            
+            // Reload the current page to reflect online status
+            if (auth.currentUser) {
+              loadUserData(auth.currentUser);
+              reloadCurrentPage();
+            }
           }
           return true;
         }),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Connection timeout")), 10000)
+        setTimeout(() => reject(new Error("Connection timeout")), 5000)
       )
     ])
     .then(result => {
@@ -188,7 +213,7 @@ document.addEventListener('DOMContentLoaded', function() {
         dbConnectionRetries++;
         console.log(`Retrying connection (attempt ${dbConnectionRetries})`);
         return new Promise(resolve => setTimeout(() => 
-          resolve(checkDatabaseConnectivity()), 2000));
+          resolve(checkDatabaseConnectivity()), 1000));
       }
       
       dbConnectionStatus = false;
@@ -251,33 +276,43 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Function to periodically check connection status and force online mode if available
   function checkAndForceOnlineMode() {
-    if (navigator.onLine && !dbConnectionStatus) {
+    if (navigator.onLine) {
       console.log('Internet appears to be available, attempting to reconnect');
       dbConnectionRetries = 0;
       
-      checkDatabaseConnectivity()
-        .then(isConnected => {
-          if (isConnected) {
-            console.log('Successfully reconnected to database');
-            // Reload current page content to use online mode
-            if (auth.currentUser) {
-              loadUserData(auth.currentUser);
-              reloadCurrentPage();
-            }
-          }
+      // Force enable network
+      db.enableNetwork()
+        .then(() => {
+          console.log('Network force enabled');
+          dbConnectionStatus = true;
+          
+          checkDatabaseConnectivity()
+            .then(isConnected => {
+              if (isConnected) {
+                console.log('Successfully reconnected to database');
+                // Reload current page content to use online mode
+                if (auth.currentUser) {
+                  loadUserData(auth.currentUser);
+                  reloadCurrentPage();
+                }
+              }
+            });
+        })
+        .catch(err => {
+          console.error('Error forcing network mode:', err);
         });
     }
   }
   
-  // Set up periodic connectivity checks (every 20 seconds)
+  // Set up more frequent connectivity checks (every 5 seconds)
   setInterval(() => {
     if (navigator.onLine) {
       checkDatabaseConnectivity();
     }
     
-    // Try to force online mode if we're offline but internet is available
+    // Try to force online mode if internet is available
     checkAndForceOnlineMode();
-  }, 20000);
+  }, 5000);
   
   // Show initial network status
   createNetworkIndicator();
