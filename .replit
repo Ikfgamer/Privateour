@@ -15,7 +15,7 @@ localPort = 3000
 externalPort = 80
 
 [workflows]
-runButton = "Run"
+runButton = "Web Server"
 
 [[workflows.workflow]]
 name = "Run"
@@ -24,3 +24,11 @@ author = 40330681
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npx serve . -l 0.0.0.0:3000"
+
+[[workflows.workflow]]
+name = "Web Server"
+author = 40330681
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python -m http.server 8080 --bind 0.0.0.0"
