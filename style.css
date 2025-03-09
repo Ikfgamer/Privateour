@@ -67,7 +67,7 @@
     justify-content: flex-start;
     padding: 0;
   }
-  
+
   .horizontal-tab {
     flex: 0 0 auto;
     min-width: 80px;
@@ -1060,8 +1060,7 @@ body {
   background-color: var(--background-light);
 }
 
-.leaderboard tr:hover {
-  background-color: #f1f1f1;
+.leaderboard tr:hover {  background-color: #f1f1f1;
 }
 
 .rank {
@@ -2185,7 +2184,7 @@ border-radius: 8px;
     justify-content: flex-start;
     padding: 0;
   }
-  
+
   .horizontal-tab {
     flex: 0 0 auto;
     min-width: 80px;
@@ -3543,24 +3542,203 @@ input:checked + .toggle-slider:before {
   .admin-layout {
     grid-template-columns: 1fr;
   }
-  
+
   .admin-sidebar {
     display: none;
   }
-  
+
   .network-status {
     top: 10px;
     right: 10px;
     padding: 8px 12px;
   }
-  
+
   .network-status-icon {
     width: 20px;
     height: 20px;
     margin-right: 8px;
   }
-  
+
   .network-status-text {
     font-size: 12px;
+  }
+}
+
+/* Network Status Indicator */
+.network-status {
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  animation: fadeIn 0.3s ease-in-out;
+  max-width: 90%;
+}
+
+.network-status-icon {
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+
+.network-status-icon.online {
+  background-color: #4CAF50;
+}
+
+.network-status-icon.offline {
+  background-color: #F44336;
+  animation: pulse 2s infinite;
+}
+
+.network-status-text {
+  font-size: 14px;
+  margin-right: 10px;
+}
+
+/* Enhanced Reconnect Prompt */
+.reconnect-prompt {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.reconnect-content {
+  background-color: #1a1e2e;
+  border-radius: 10px;
+  padding: 20px;
+  max-width: 90%;
+  width: 400px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.reconnect-content h3 {
+  color: #ff9800;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reconnect-content h3 i {
+  margin-right: 10px;
+  animation: pulse 2s infinite;
+}
+
+.reconnect-content p {
+  margin: 15px 0;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.reconnect-actions {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* Offline indicator pulse animation */
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Styles for cached/offline data indicators */
+.cached-data-indicator {
+  background-color: #ff980033;
+  color: #ff9800;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-left: 5px;
+  display: inline-block;
+}
+
+/* Offline mode banner */
+.offline-mode-banner {
+  background: linear-gradient(45deg, #ff9800, #ff5722);
+  color: white;
+  padding: 8px 15px;
+  text-align: center;
+  font-size: 14px;
+  position: relative;
+}
+
+.offline-mode-banner i {
+  margin-right: 6px;
+}
+
+/* Indicator for content that requires internet */
+.requires-internet {
+  position: relative;
+  overflow: hidden;
+}
+
+.requires-internet::after {
+  content: "Requires Internet";
+  position: absolute;
+  top: 0;
+  right: 0;
+  background-color: rgba(244, 67, 54, 0.8);
+  color: white;
+  padding: 3px 8px;
+  font-size: 10px;
+  border-radius: 0 0 0 5px;
+  pointer-events: none;
+}
+
+/* Custom loader for connectivity operations */
+.connectivity-loader {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  border-top-color: #ff9800;
+  animation: spin 1s ease-in-out infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }

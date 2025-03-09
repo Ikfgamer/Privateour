@@ -1,12 +1,61 @@
 
-// Global error handlers
+// Register service worker for offline capabilities
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .then(registration => {
+        console.log('ServiceWorker registration successful with scope: ', registration.scope);
+      })
+      .catch(error => {
+        console.error('ServiceWorker registration failed: ', error);
+      });
+  });
+}
+
+// Global error handlers with improved logging
 window.addEventListener('error', function(event) {
-  console.error('Global error caught:', event.message);
+  console.error('Global error caught:', event.message, event);
+  // Save error information for potential debugging later
+  if (localStorage) {
+    try {
+      const errors = JSON.parse(localStorage.getItem('errorLog') || '[]');
+      errors.push({
+        message: event.message,
+        url: event.filename,
+        line: event.lineno,
+        col: event.colno,
+        time: new Date().toISOString()
+      });
+      // Keep only the last 10 errors
+      if (errors.length > 10) errors.shift();
+      localStorage.setItem('errorLog', JSON.stringify(errors));
+    } catch (e) {
+      // Ignore storage errors
+    }
+  }
 });
 
 window.addEventListener('unhandledrejection', function(event) {
   console.error('Unhandled promise rejection:', event.reason);
+  // Try to extract more meaningful error info
+  const reason = event.reason;
+  const message = reason.message || 'Unknown promise rejection';
+  const code = reason.code || 'unknown';
+  
+  // Log and potentially show notification to user
+  console.log(`Promise rejected: ${message} (Code: ${code})`);
+  
+  // Show notification only for critical errors
+  if (reason.code === 'unavailable') {
+    showConnectionIssueNotification();
+  }
 });
+
+// Global reconnect function (will be called by UI elements)
+window.reconnectToFirebase = function() {
+  console.log("Manual reconnection initiated");
+  return resetFirebaseConnection();
+};
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -24,6 +73,7 @@ let auth, db, storage;
 let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 5;
 let connectionStatus = true;
+let dbConnectionRetries = 0;
 
 // Initialize Firebase with improved error handling and connectivity
 try {
@@ -39,28 +89,27 @@ try {
   storage = firebase.storage();
   
   // Configure Firestore for better performance and offline capabilities
+  // Using the merge parameter to avoid overriding settings
   db.settings({
     ignoreUndefinedProperties: true,
     merge: true,
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
   });
-  
-  // Configure Firestore for better performance and offline capabilities
-  db.settings({
-    ignoreUndefinedProperties: true,
-    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
-  });
 
-  // Enable offline persistence to handle intermittent connectivity
+  // Enable offline persistence with proper error handling
+  // Use a single enablePersistence call with a more robust approach
   db.enablePersistence({ synchronizeTabs: true })
     .then(() => {
       console.log("Firestore persistence enabled successfully");
+      showNotification("Offline mode enabled. You can use the app without internet!", "success");
       
       // After enabling persistence, ensure we're also enabling network
       return db.enableNetwork();
     })
     .then(() => {
       console.log("Firestore network enabled");
+      connectionStatus = true;
+      
       // Setup a listener to detect when Firestore data is in sync
       db.waitForPendingWrites().then(() => {
         console.log("All pending writes completed");
@@ -70,11 +119,11 @@ try {
       if (err.code === 'failed-precondition') {
         // Multiple tabs open, persistence can only be enabled in one tab
         console.warn("Persistence failed: Multiple tabs open");
-        showNotification("Multiple tabs detected. Offline mode may be limited.", "info");
+        showNotification("Multiple tabs detected. Offline features will be limited.", "info");
       } else if (err.code === 'unimplemented') {
         // Browser doesn't support persistence
         console.warn("Persistence not supported by this browser");
-        showNotification("Your browser doesn't support offline mode. Some features may be limited.", "info");
+        showNotification("Your browser doesn't fully support offline mode. Some features may be limited.", "info");
       } else {
         console.error("Error enabling persistence:", err);
       }
@@ -83,39 +132,67 @@ try {
       db.enableNetwork().catch(e => console.error("Could not enable network:", e));
     });
     
-  // Set up better network state monitoring
-  const connectedRef = firebase.database().ref(".info/connected");
-  connectedRef.on("value", (snap) => {
-    if (snap.val() === true) {
-      console.log("Firebase connected");
-      connectionStatus = true;
-      // Hide any offline notifications
-      const networkStatus = document.querySelector('.network-status');
-      if (networkStatus) {
-        networkStatus.remove();
+  // Set up better network state monitoring using Realtime Database
+  try {
+    const connectedRef = firebase.database().ref(".info/connected");
+    connectedRef.on("value", (snap) => {
+      if (snap.val() === true) {
+        console.log("Firebase connected");
+        connectionStatus = true;
+        
+        // Hide any offline notifications
+        const networkStatus = document.querySelector('.network-status');
+        if (networkStatus) {
+          networkStatus.remove();
+        }
+        
+        // Reset connection attempts on successful connection
+        connectionAttempts = 0;
+        
+        // Show reconnected notification if we previously had issues
+        if (document.querySelector('.reconnect-prompt')) {
+          showNotification("Connection restored!", "success");
+          document.querySelector('.reconnect-prompt').remove();
+        }
+      } else {
+        console.log("Firebase disconnected");
+        connectionStatus = false;
+        
+        // Only show the reconnect prompt if we're really offline
+        if (!navigator.onLine) {
+          showReconnectPrompt();
+        }
       }
-    } else {
-      console.log("Firebase disconnected");
-      connectionStatus = false;
-    }
-  });
+    });
+  } catch (dbRefError) {
+    console.error("Error setting up connection monitoring:", dbRefError);
+    // Continue without connection monitoring
+  }
   
   // Create function to verify connectivity with retry logic
   function verifyFirebaseConnectivity(retryCount = 0, maxRetries = 3) {
     console.log(`Verifying Firebase connectivity (attempt ${retryCount + 1}/${maxRetries + 1})...`);
     
     return new Promise((resolve, reject) => {
+      // If we're offline according to browser, don't even try
+      if (!navigator.onLine) {
+        console.log("Browser reports device is offline, skipping connectivity check");
+        connectionStatus = false;
+        reject(new Error("Device offline"));
+        return;
+      }
+      
       // Set a timeout for the operation
       const timeoutId = setTimeout(() => {
         reject(new Error("Connection verification timed out"));
-      }, 5000);
+      }, 10000); // Extended timeout
       
-      // First check internet connectivity
-      fetch('https://www.google.com/favicon.ico', { 
-        mode: 'no-cors',
-        cache: 'no-cache',
-        method: 'HEAD'
-      })
+      // Try multiple CDNs for more reliable check
+      Promise.any([
+        fetch('https://www.google.com/favicon.ico', { mode: 'no-cors', cache: 'no-cache', method: 'HEAD' }),
+        fetch('https://www.cloudflare.com/favicon.ico', { mode: 'no-cors', cache: 'no-cache', method: 'HEAD' }),
+        fetch('https://cdn.jsdelivr.net/favicon.ico', { mode: 'no-cors', cache: 'no-cache', method: 'HEAD' })
+      ])
       .then(() => {
         console.log("Internet connection verified");
         
@@ -151,7 +228,57 @@ try {
     });
   }
   
-  // Ensure network is enabled
+  // Function to reset Firebase connection
+  function resetFirebaseConnection() {
+    console.log("Resetting Firebase connection...");
+    
+    // Show reconnecting message
+    showNotification("Reconnecting to server...", "info");
+    
+    // First disable network
+    return db.disableNetwork()
+      .catch(err => {
+        console.error("Error disabling network:", err);
+        // Continue anyway
+        return Promise.resolve();
+      })
+      .then(() => {
+        // Small delay before re-enabling
+        return new Promise(resolve => setTimeout(resolve, 2000));
+      })
+      .then(() => {
+        // Then re-enable network
+        return db.enableNetwork();
+      })
+      .then(() => {
+        console.log("Network reset successful");
+        return verifyFirebaseConnectivity();
+      })
+      .then(() => {
+        showNotification("Connection successfully restored!", "success");
+        connectionStatus = true;
+        
+        // Remove any reconnect prompts
+        const reconnectPrompt = document.querySelector('.reconnect-prompt');
+        if (reconnectPrompt) {
+          reconnectPrompt.remove();
+        }
+        
+        // Reload current user data if logged in
+        if (auth.currentUser) {
+          loadUserData(auth.currentUser);
+        }
+        
+        return true;
+      })
+      .catch(err => {
+        console.error("Connection reset failed:", err);
+        showNotification("Could not restore connection. Please try again later.", "error");
+        return false;
+      });
+  }
+  
+  // Ensure network is enabled with more reliable approach
   console.log("Enabling Firebase network...");
   db.enableNetwork()
     .then(() => {
@@ -163,11 +290,16 @@ try {
     })
     .then(() => {
       console.log("Firebase fully initialized and connected");
-      // Setup connection state listener
-      firebase.firestore.onSnapshotsInSync(() => {
-        connectionStatus = true;
-        console.log("Firestore data in sync with server");
-      });
+      
+      // Setup connection state listener for better real-time monitoring
+      try {
+        firebase.firestore.onSnapshotsInSync(() => {
+          connectionStatus = true;
+          console.log("Firestore data in sync with server");
+        });
+      } catch (err) {
+        console.log("onSnapshotsInSync not supported:", err);
+      }
     })
     .catch(err => {
       console.error("Error establishing connection:", err);
@@ -175,12 +307,458 @@ try {
       
       // Even though connection failed, we'll still proceed in offline mode
       console.log("Continuing in offline mode with cached data if available");
+      
+      // Show offline notification
+      showConnectionIssueNotification();
     });
 } catch (err) {
   console.error("Firebase initialization error:", err);
   if (typeof showNotification === 'function') {
     showNotification("Error connecting to database. Please refresh the page.", "error");
   }
+}
+
+// Function to handle connection failures
+function handleConnectionFailure() {
+  if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
+    connectionAttempts++;
+    console.log(`Connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
+    
+    // Exponential backoff for retries
+    const delay = Math.min(1000 * Math.pow(2, connectionAttempts), 10000);
+    
+    setTimeout(() => {
+      db.enableNetwork()
+        .then(() => {
+          console.log("Connection re-established");
+          connectionStatus = true;
+          connectionAttempts = 0;
+          
+          // Refresh data if user is logged in
+          if (auth.currentUser) {
+            loadUserData(auth.currentUser);
+          }
+        })
+        .catch(err => {
+          console.error("Retry failed:", err);
+          handleConnectionFailure();
+        });
+    }, delay);
+  } else {
+    console.error("Maximum connection attempts reached");
+    showNotification("Unable to connect to the server. You can continue using the app in offline mode.", "warning");
+    
+    // Show reconnect button
+    showReconnectPrompt();
+  }
+}
+
+// Helper function to show connection issue notification
+function showConnectionIssueNotification() {
+  showNotification("You're currently offline. Using cached data.", "warning");
+  
+  // Create an offline indicator if it doesn't exist
+  if (!document.querySelector('.network-status')) {
+    const offlineIndicator = document.createElement('div');
+    offlineIndicator.className = 'network-status';
+    offlineIndicator.innerHTML = `
+      <div class="network-status-icon offline">
+        <i class="fas fa-wifi-slash"></i>
+      </div>
+      <div class="network-status-text">Offline Mode</div>
+      <button id="manual-reconnect" class="btn btn-sm btn-light ml-2">
+        <i class="fas fa-sync-alt"></i> Reconnect
+      </button>
+    `;
+    document.body.appendChild(offlineIndicator);
+    
+    // Add event listener to reconnect button
+    document.getElementById('manual-reconnect').addEventListener('click', function() {
+      this.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Reconnecting...';
+      this.disabled = true;
+      
+      reconnectToFirebase().then(() => {
+        // Reset button state
+        this.innerHTML = '<i class="fas fa-sync-alt"></i> Reconnect';
+        this.disabled = false;
+      });
+    });
+  }
+}
+
+// Function to show reconnect prompt
+function showReconnectPrompt() {
+  // Only show if we don't already have one
+  if (document.querySelector('.reconnect-prompt')) {
+    return;
+  }
+  
+  const reconnectPrompt = document.createElement('div');
+  reconnectPrompt.className = 'reconnect-prompt';
+  reconnectPrompt.innerHTML = `
+    <div class="reconnect-content">
+      <h3><i class="fas fa-wifi-slash"></i> Connection Issue</h3>
+      <p>You're currently offline. Using cached data. Some features may be limited.</p>
+      <div class="reconnect-actions">
+        <button id="manual-reconnect-prompt" class="btn btn-primary">
+          <i class="fas fa-sync-alt"></i> Reconnect
+        </button>
+        <button id="continue-offline" class="btn btn-secondary">
+          Continue in Offline Mode
+        </button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(reconnectPrompt);
+  
+  // Add event listener to reconnect button
+  document.getElementById('manual-reconnect-prompt').addEventListener('click', function() {
+    this.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Reconnecting...';
+    this.disabled = true;
+    
+    // Reset connection
+    reconnectToFirebase();
+  });
+  
+  // Add event listener to continue offline button
+  document.getElementById('continue-offline').addEventListener('click', function() {
+    // Hide the prompt
+    reconnectPrompt.remove();
+    
+    // Show a persistent offline indicator instead
+    showConnectionIssueNotification();
+  });
+}
+
+// Define renderOfflineAdminPanel function to prevent errors
+window.renderOfflineAdminPanel = function(user) {
+  console.log("Rendering offline admin panel for user:", user?.email);
+  
+  const mainContent = document.getElementById('main-content');
+  if (!mainContent) {
+    console.error('Main content container not found for offline admin panel');
+    return;
+  }
+  
+  // Use default data for offline mode
+  const offlineStats = {
+    totalUsers: "—",
+    activeTournaments: "—",
+    pointsDistributed: "—",
+    newUsers: "—",
+    recentUsers: [],
+    tournaments: []
+  };
+  
+  // Create default user data for offline mode
+  const userData = {
+    displayName: user.displayName || (user.email ? user.email.split('@')[0] : 'Admin'),
+    email: user.email || 'admin@tournamenthub.com',
+    isAdmin: true,
+    photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Admin'}&background=random&color=fff`
+  };
+  
+  // Create sample offline data for better UI experience
+  const sampleUsers = [
+    {
+      displayName: "Sample User",
+      email: "user@example.com",
+      photoURL: "https://ui-avatars.com/api/?name=Sample+User&background=random&color=fff",
+      joinDate: new Date(),
+      points: 100,
+      isVIP: false,
+      uid: "sample1"
+    },
+    {
+      displayName: userData.displayName,
+      email: userData.email,
+      photoURL: userData.photoURL,
+      joinDate: new Date(),
+      points: 1000,
+      isVIP: true,
+      isAdmin: true,
+      uid: "admin1"
+    }
+  ];
+  
+  const sampleTournaments = [
+    {
+      name: "Weekend Warrior",
+      startDate: new Date(Date.now() + 2*24*60*60*1000),
+      entryFee: 50,
+      prizePool: 1000,
+      participants: 32,
+      maxParticipants: 64,
+      id: "sample-t1"
+    },
+    {
+      name: "BGMI Champions",
+      startDate: new Date(Date.now() + 5*24*60*60*1000),
+      entryFee: 100,
+      prizePool: 5000,
+      participants: 45,
+      maxParticipants: 100,
+      id: "sample-t2"
+    }
+  ];
+  
+  mainContent.innerHTML = `
+    <div class="admin-layout">
+      <div class="admin-sidebar">
+        <div class="admin-logo">
+          <i class="fas fa-trophy"></i> Admin Panel
+        </div>
+        <div class="admin-user">
+          <img src="${userData.photoURL}" alt="Admin Avatar">
+          <div class="admin-user-info">
+            <div class="admin-user-name">${userData.displayName}</div>
+            <div class="admin-user-role">Administrator</div>
+          </div>
+        </div>
+        <ul class="admin-nav">
+          <li class="admin-nav-item">
+            <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
+              <i class="fas fa-tachometer-alt"></i> Dashboard
+            </a>
+          </li>
+          <li class="admin-nav-item">
+            <a href="#" class="admin-nav-link" data-admin-page="users">
+              <i class="fas fa-users"></i> User Management
+            </a>
+          </li>
+          <li class="admin-nav-item">
+            <a href="#" class="admin-nav-link" data-admin-page="tournaments">
+              <i class="fas fa-trophy"></i> Tournament Management
+            </a>
+          </li>
+          <li class="admin-nav-item">
+            <a href="#" class="admin-nav-link" data-admin-page="rewards">
+              <i class="fas fa-gift"></i> Rewards & Earnings
+            </a>
+          </li>
+          <li class="admin-nav-item">
+            <a href="#" class="admin-nav-link" data-admin-page="ads">
+              <i class="fas fa-ad"></i> Ad Management
+            </a>
+          </li>
+          <li class="admin-nav-item">
+            <a href="#" class="admin-nav-link" data-admin-page="settings">
+              <i class="fas fa-cog"></i> Settings
+            </a>
+          </li>
+          <li class="admin-nav-item admin-nav-back">
+            <a href="#" class="admin-nav-link" id="back-to-site">
+              <i class="fas fa-arrow-left"></i> Back to Site
+            </a>
+          </li>
+        </ul>
+      </div>
+      <div class="admin-content">
+        <div id="admin-dashboard-page">
+          <div class="admin-header">
+            <h1 class="admin-title">Dashboard</h1>
+            <div class="admin-actions">
+              <button class="btn btn-primary" id="refresh-admin-data" disabled>
+                <i class="fas fa-sync-alt"></i> Refresh Data
+              </button>
+            </div>
+          </div>
+
+          <div class="offline-notice">
+            <div class="alert warning">
+              <h3><i class="fas fa-wifi-slash"></i> Offline Mode</h3>
+              <p>You are currently in offline mode. Limited functionality is available.</p>
+              <p>Some features and data may not be accessible until you're back online.</p>
+            </div>
+          </div>
+
+          <div class="stats-grid mb-4">
+            <div class="stat-box">
+              <i class="fas fa-users"></i>
+              <div class="value">${offlineStats.totalUsers}</div>
+              <div class="label">Total Users</div>
+            </div>
+            <div class="stat-box">
+              <i class="fas fa-trophy"></i>
+              <div class="value">${offlineStats.activeTournaments}</div>
+              <div class="label">Active Tournaments</div>
+            </div>
+            <div class="stat-box">
+              <i class="fas fa-coins"></i>
+              <div class="value">${offlineStats.pointsDistributed}</div>
+              <div class="label">Points Distributed</div>
+            </div>
+            <div class="stat-box">
+              <i class="fas fa-user-plus"></i>
+              <div class="value">${offlineStats.newUsers}</div>
+              <div class="label">New Users (Today)</div>
+            </div>
+          </div>
+
+          <div class="admin-quick-actions mb-4">
+            <h2 class="mb-2">Quick Actions</h2>
+            <div class="quick-actions-grid">
+              <div class="quick-action-card" id="create-tournament">
+                <i class="fas fa-trophy"></i>
+                <span>Create Tournament</span>
+              </div>
+              <div class="quick-action-card" id="add-user">
+                <i class="fas fa-user-plus"></i>
+                <span>Add User</span>
+              </div>
+              <div class="quick-action-card" id="edit-rewards">
+                <i class="fas fa-gift"></i>
+                <span>Edit Rewards</span>
+              </div>
+              <div class="quick-action-card" id="site-settings">
+                <i class="fas fa-cog"></i>
+                <span>Site Settings</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <h2>Recent Users</h2>
+              <button class="btn btn-sm btn-primary" id="view-all-users">View All</button>
+            </div>
+            <div class="admin-table-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Join Date</th>
+                    <th>Points</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-users-table">
+                  ${sampleUsers.map(user => `
+                    <tr>
+                      <td>
+                        <div class="user-cell">
+                          <img src="${user.photoURL}" alt="User Avatar">
+                          <div>
+                            <div class="user-name">${user.displayName}</div>
+                            <div class="user-email">${user.email}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>${user.joinDate.toLocaleDateString()}</td>
+                      <td>${user.points}</td>
+                      <td><span class="status-badge ${user.isVIP ? 'vip' : 'standard'}">${user.isVIP ? 'VIP' : 'Standard'}</span></td>
+                      <td>
+                        <div class="table-actions">
+                          <button class="btn btn-sm btn-primary edit-user" data-user-id="${user.uid}"><i class="fas fa-edit"></i></button>
+                          <button class="btn btn-sm btn-danger toggle-ban" data-user-id="${user.uid}">
+                            <i class="fas fa-user-slash"></i>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="admin-card">
+            <div class="admin-card-header">
+              <h2>Upcoming Tournaments</h2>
+              <button class="btn btn-sm btn-primary" id="view-all-tournaments">View All</button>
+            </div>
+            <div class="admin-table-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>Tournament</th>
+                    <th>Start Date</th>
+                    <th>Entry Fee</th>
+                    <th>Prize Pool</th>
+                    <th>Participants</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="tournaments-table">
+                  ${sampleTournaments.map(tournament => `
+                    <tr>
+                      <td>${tournament.name}</td>
+                      <td>${tournament.startDate.toLocaleDateString()}</td>
+                      <td>${tournament.entryFee} points</td>
+                      <td>${tournament.prizePool} points</td>
+                      <td>${tournament.participants}/${tournament.maxParticipants}</td>
+                      <td>
+                        <div class="table-actions">
+                          <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-edit"></i></button>
+                          <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-trash"></i></button>
+                        </div>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Setup admin panel event listeners
+  setupAdminPanelEvents();
+
+  // Add event listener for "Back to Site" button
+  document.getElementById('back-to-site').addEventListener('click', (e) => {
+    e.preventDefault();
+    renderMainContent('home');
+  });
+
+  // Add event listeners for quick actions
+  document.getElementById('create-tournament').addEventListener('click', () => {
+    showAdminPage('tournaments');
+    showNotification("You're offline. Tournament creation will be available when you're back online.", "info");
+  });
+
+  document.getElementById('add-user').addEventListener('click', () => {
+    showAdminPage('users');
+    showNotification("You're offline. User creation will be available when you're back online.", "info");
+  });
+
+  document.getElementById('edit-rewards').addEventListener('click', () => {
+    showAdminPage('rewards');
+    showNotification("You're offline. Reward editing will be available when you're back online.", "info");
+  });
+
+  document.getElementById('site-settings').addEventListener('click', () => {
+    showAdminPage('settings');
+  });
+  
+  // Add event listener for View All buttons
+  document.getElementById('view-all-users').addEventListener('click', () => {
+    showAdminPage('users');
+  });
+  
+  document.getElementById('view-all-tournaments').addEventListener('click', () => {
+    showAdminPage('tournaments');
+  });
+  
+  // Add event listeners for action buttons
+  document.querySelectorAll('.edit-user, .toggle-ban, .edit-tournament, .delete-tournament').forEach(btn => {
+    btn.addEventListener('click', () => {
+      showNotification("You're offline. This action will be available when you're back online.", "info");
+    });
+  });
+  
+  // Check for online status change
+  window.addEventListener('online', function() {
+    showNotification("You're back online! Reloading admin panel...", "success");
+    // Reload the admin panel to get fresh data
+    setTimeout(() => {
+      renderAdminPanel();
+    }, 1000);
+  });
 }
 
 // Connection failure handler

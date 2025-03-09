@@ -1,0 +1,86 @@
+
+/* Offline Fallback Styles */
+#offline-fallback {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #1f2440;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  color: white;
+  text-align: center;
+}
+
+.offline-container {
+  max-width: 90%;
+  width: 400px;
+  padding: 2rem;
+  border-radius: 10px;
+  background-color: #2a305e;
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+
+.offline-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  color: #ff9800;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.offline-container h2 {
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+}
+
+.offline-container p {
+  margin-bottom: 1.5rem;
+  color: #b9bbc9;
+}
+
+.offline-container .btn {
+  background: linear-gradient(45deg, #ff9800, #ff5722);
+  border: none;
+  color: white;
+  padding: 0.75rem 1.5rem;
+  border-radius: 30px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.offline-container .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(255, 152, 0, 0.4);
+}
+
+.offline-container .btn:active {
+  transform: translateY(0);
+}
+
+.offline-container .btn i {
+  font-size: 1rem;
+}
+
+.offline-container .btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}

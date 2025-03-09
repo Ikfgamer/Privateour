@@ -1,63 +1,115 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="application-name" content="Tournament Hub">
-  
-  <!-- Improve connection handling and caching -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-
-  <meta charset="utf-8">
+  <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Tournament Hub</title>
-  <link href="style.css" rel="stylesheet" type="text/css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-</head>
+  <meta name="description" content="Join tournaments, earn rewards, and compete with players worldwide.">
+  <meta name="theme-color" content="#1f2440">
 
+  <!-- Web App Manifest for PWA capabilities -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- Icons for various platforms -->
+  <link rel="icon" type="image/png" href="favicon.ico">
+  <link rel="apple-touch-icon" href="icon-192x192.png">
+
+  <!-- Firebase Libraries -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+  <!-- Font Awesome for Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+  <!-- Google Fonts with preloading for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Offline fallback page -->
+  <link rel="stylesheet" href="offline.css" media="none" onload="if(navigator.onLine) this.media='all'">
+</head>
 <body>
-  <div id="app">
-    <!-- Loading screen -->
-    <div id="loading-screen">
-      <div class="loader"></div>
-    </div>
-    
-    <!-- Main content will be rendered here -->
+  <!-- Loading Screen -->
+  <div id="loading-screen">
+    <div class="spinner"></div>
+    <p>Loading Tournament Hub...</p>
   </div>
-  
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
-  
-  <!-- Connection monitoring script -->
-  <script>
-    // Simple connection monitor that runs before main script
-    window.connectionMonitor = {
-      status: navigator.onLine,
-      initialize: function() {
-        window.addEventListener('online', () => {
-          this.status = true;
-          console.log('Connection restored');
-        });
-        
-        window.addEventListener('offline', () => {
-          this.status = false;
-          console.log('Connection lost');
-        });
-        
-        console.log('Connection monitor initialized, status:', this.status ? 'online' : 'offline');
-      }
-    };
-    
-    // Initialize connection monitor
-    window.connectionMonitor.initialize();
-  </script>
-  
+
+  <!-- Offline app shell fallback (hidden by default) -->
+  <div id="offline-fallback" style="display: none;">
+    <div class="offline-container">
+      <div class="offline-icon">
+        <i class="fas fa-wifi-slash"></i>
+      </div>
+      <h2>You're offline</h2>
+      <p>The Tournament Hub requires an internet connection.</p>
+      <button id="retry-connection" class="btn btn-primary">
+        <i class="fas fa-sync-alt"></i> Try Again
+      </button>
+    </div>
+  </div>
+
+  <!-- Main App Container -->
+  <div id="app"></div>
+
+  <!-- Custom Scripts -->
   <script src="script.js"></script>
+
+  <!-- Offline detection -->
+  <script>
+    // Display offline fallback if no connection
+    function checkConnection() {
+      const offlineFallback = document.getElementById('offline-fallback');
+      const app = document.getElementById('app');
+      const loadingScreen = document.getElementById('loading-screen');
+
+      if (!navigator.onLine) {
+        // Check if app has already loaded
+        if (app.children.length === 0) {
+          offlineFallback.style.display = 'flex';
+          loadingScreen.style.display = 'none';
+        }
+      } else {
+        offlineFallback.style.display = 'none';
+      }
+    }
+
+    // Check connection status at startup
+    window.addEventListener('load', checkConnection);
+
+    // Recheck when online/offline events fire
+    window.addEventListener('online', () => {
+      document.getElementById('offline-fallback').style.display = 'none';
+      window.location.reload();
+    });
+
+    window.addEventListener('offline', checkConnection);
+
+    // Retry button functionality
+    document.getElementById('retry-connection').addEventListener('click', function() {
+      this.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Checking...';
+      this.disabled = true;
+
+      // Simulate a network check
+      setTimeout(() => {
+        if (navigator.onLine) {
+          window.location.reload();
+        } else {
+          this.innerHTML = '<i class="fas fa-sync-alt"></i> Try Again';
+          this.disabled = false;
+
+          // Show alert if still offline
+          alert('Still offline. Please check your internet connection and try again.');
+        }
+      }, 1500);
+    });
+  </script>
 </body>
 </html>
