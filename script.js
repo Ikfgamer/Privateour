@@ -8,6 +8,41 @@ document.addEventListener('DOMContentLoaded', function() {
   let networkStatusIndicator;
   let dbConnectionStatus = true; // Assume connected to begin with
   
+  // Firebase Configuration
+  const firebaseConfig = {
+    apiKey: "AIzaSyBqDwc_TcqqBOICcM-djWShW250MsVQCvg",
+    authDomain: "flowing-athlete-452807-k6.firebaseapp.com",
+    projectId: "flowing-athlete-452807-k6",
+    storageBucket: "flowing-athlete-452807-k6.firebasestorage.app",
+    messagingSenderId: "1046325065023",
+    appId: "1:1046325065023:web:79ce007fa947b73ec6cf8a",
+    measurementId: "G-M65H20B0V5"
+  };
+
+  // Initialize Firebase with offline persistence enabled
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+  const storage = firebase.storage();
+  
+  // Enable offline persistence for Firestore with better error handling
+  db.enablePersistence({synchronizeTabs: true})
+    .catch(err => {
+      if (err.code == 'failed-precondition') {
+        console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+        showNotification('Multiple tabs open. Offline mode may not work properly.', 'warning');
+      } else if (err.code == 'unimplemented') {
+        console.log('The current browser does not support offline persistence');
+        showNotification('Your browser does not support offline mode.', 'warning');
+      }
+    });
+    
+  // Set offline/online cache config for better offline experience
+  db.settings({
+    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+    ignoreUndefinedProperties: true
+  });
+  
   // Add network status indicator to the body
   function createNetworkIndicator() {
     if (!networkStatusIndicator) {
@@ -140,42 +175,6 @@ document.addEventListener('DOMContentLoaded', function() {
       checkDatabaseConnectivity();
     }
   }, 30000);
-
-  // Firebase Configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyBqDwc_TcqqBOICcM-djWShW250MsVQCvg",
-    authDomain: "flowing-athlete-452807-k6.firebaseapp.com",
-    projectId: "flowing-athlete-452807-k6",
-    storageBucket: "flowing-athlete-452807-k6.firebasestorage.app",
-    messagingSenderId: "1046325065023",
-    appId: "1:1046325065023:web:79ce007fa947b73ec6cf8a",
-    measurementId: "G-M65H20B0V5"
-  };
-
-  // Initialize Firebase with offline persistence enabled
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
-  
-  // Enable offline persistence for Firestore with better error handling
-  db.enablePersistence({synchronizeTabs: true})
-    .catch(err => {
-      if (err.code == 'failed-precondition') {
-        console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
-        showNotification('Multiple tabs open. Offline mode may not work properly.', 'warning');
-      } else if (err.code == 'unimplemented') {
-        console.log('The current browser does not support offline persistence');
-        showNotification('Your browser does not support offline mode.', 'warning');
-      }
-    });
-    
-  // Set offline/online cache config for better offline experience
-  db.settings({
-    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-    ignoreUndefinedProperties: true
-  });
-    
-  const storage = firebase.storage();
   
   // Show initial network status
   createNetworkIndicator();
@@ -1809,8 +1808,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Create default user data for offline mode
     const userData = {
-      displayName: user.displayName || user.email.split('@')[0],
-      email: user.email,
+      displayName: user.displayName || (user.email ? user.email.split('@')[0] : 'Admin'),
+      email: user.email || 'admin@tournamenthub.com',
       isAdmin: true,
       photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Admin'}&background=random&color=fff`
     };
