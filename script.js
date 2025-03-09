@@ -1,3 +1,31 @@
+
+// Global error handlers
+window.addEventListener('error', function(event) {
+  console.error('Global error caught:', event.message);
+});
+
+window.addEventListener('unhandledrejection', function(event) {
+  console.error('Unhandled promise rejection:', event.reason);
+});
+
+
+// Initialize Firebase first - before anything else
+const firebaseConfig = {
+  apiKey: "AIzaSyBqDwc_TcqqBOICcM-djWShW250MsVQCvg",
+  authDomain: "flowing-athlete-452807-k6.firebaseapp.com",
+  projectId: "flowing-athlete-452807-k6",
+  storageBucket: "flowing-athlete-452807-k6.firebasestorage.app",
+  messagingSenderId: "1046325065023",
+  appId: "1:1046325065023:web:79ce007fa947b73ec6cf8a",
+  measurementId: "G-M65H20B0V5"
+};
+
+// Initialize Firebase globally so it's accessible everywhere
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+
 // Firebase Configuration and Initialization
 document.addEventListener('DOMContentLoaded', function() {
   // Hide loading screen after everything is loaded
@@ -8,39 +36,15 @@ document.addEventListener('DOMContentLoaded', function() {
   let networkStatusIndicator;
   let dbConnectionStatus = true; // Assume connected to begin with
   
-  // Firebase Configuration
-  const firebaseConfig = {
-    apiKey: "AIzaSyBqDwc_TcqqBOICcM-djWShW250MsVQCvg",
-    authDomain: "flowing-athlete-452807-k6.firebaseapp.com",
-    projectId: "flowing-athlete-452807-k6",
-    storageBucket: "flowing-athlete-452807-k6.firebasestorage.app",
-    messagingSenderId: "1046325065023",
-    appId: "1:1046325065023:web:79ce007fa947b73ec6cf8a",
-    measurementId: "G-M65H20B0V5"
-  };
-
-  // Initialize Firebase with offline persistence enabled
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
-  const storage = firebase.storage();
-  
-  // Enable offline persistence for Firestore with better error handling
-  db.enablePersistence({synchronizeTabs: true})
-    .catch(err => {
-      if (err.code == 'failed-precondition') {
-        console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
-        showNotification('Multiple tabs open. Offline mode may not work properly.', 'warning');
-      } else if (err.code == 'unimplemented') {
-        console.log('The current browser does not support offline persistence');
-        showNotification('Your browser does not support offline mode.', 'warning');
-      }
-    });
-    
   // Set offline/online cache config for better offline experience
+  // Use the recommended approach instead of enablePersistence
   db.settings({
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-    ignoreUndefinedProperties: true
+    ignoreUndefinedProperties: true,
+    merge: true,
+    cache: {
+      synchronizeTabs: true
+    }
   });
   
   // Add network status indicator to the body
