@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const auth = firebase.auth();
   const db = firebase.firestore();
   
-  // Enable offline persistence for Firestore
+  // Enable offline persistence for Firestore with better error handling
   db.enablePersistence({synchronizeTabs: true})
     .catch(err => {
       if (err.code == 'failed-precondition') {
@@ -99,6 +99,12 @@ document.addEventListener('DOMContentLoaded', function() {
         showNotification('Your browser does not support offline mode.', 'warning');
       }
     });
+    
+  // Set offline/online cache config for better offline experience
+  db.settings({
+    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+    ignoreUndefinedProperties: true
+  });
     
   const storage = firebase.storage();
   
@@ -423,51 +429,82 @@ document.addEventListener('DOMContentLoaded', function() {
       });
     }
 
-    // Set default user data in case we're offline
+    // Set default user data for immediate display (offline or not)
     if (userPointsDisplay) {
       userPointsDisplay.textContent = "100"; // Default value
     }
 
-    // Get and display user points
-    db.collection('users').doc(user.uid).get().then((doc) => {
-      if (doc.exists) {
-        const userData = doc.data();
-        if (userPointsDisplay) {
-          userPointsDisplay.textContent = userData.points || 0;
-        }
+    // First check if we're offline
+    if (!navigator.onLine) {
+      console.log('Detected offline status, using default user data');
+      handleOfflineUser(user, isAdmin);
+      return;
+    }
 
-        // If this is an admin logging in, check and update admin status
-        if (isAdmin && !userData.isAdmin) {
-          db.collection('users').doc(user.uid).update({
-            isAdmin: true
-          }).then(() => {
-            console.log('User updated with admin privileges');
-            showNotification('Admin privileges granted', 'success');
-          }).catch(err => {
-            console.log('Failed to update admin status, but continuing with admin privileges');
-          });
-        }
-      } else if (isAdmin) {
-        // Create user document for admin if it doesn't exist yet
-        createUserDocument(user);
-      }
-    }).catch(err => {
-      console.error('Error loading user data:', err);
-      showNotification("You're currently offline. Some features may be limited.", "warning");
-      
-      // Set default user data for offline mode
-      if (userPointsDisplay) {
-        userPointsDisplay.textContent = "100"; // Default points for offline mode
-      }
-      
-      // Always enable admin panel for admin emails, even offline
-      if (isAdmin && adminPanelLink) {
-        adminPanelLink.classList.remove('hidden');
-      }
-    });
+    // Try to get and display user points with timeout for faster detection of offline state
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Request timed out')), 5000)
+    );
+    
+    const fetchDataPromise = db.collection('users').doc(user.uid).get();
+    
+    Promise.race([fetchDataPromise, timeoutPromise])
+      .then((doc) => {
+        if (doc.exists) {
+          const userData = doc.data();
+          if (userPointsDisplay) {
+            userPointsDisplay.textContent = userData.points || 0;
+          }
 
-    // Track daily login
-    trackDailyLogin(user.uid);
+          // If this is an admin logging in, check and update admin status
+          if (isAdmin && !userData.isAdmin) {
+            db.collection('users').doc(user.uid).update({
+              isAdmin: true
+            }).then(() => {
+              console.log('User updated with admin privileges');
+              showNotification('Admin privileges granted', 'success');
+            }).catch(err => {
+              console.log('Failed to update admin status, but continuing with admin privileges');
+            });
+          }
+          
+          // After successful load, try to track daily login
+          try {
+            trackDailyLogin(user.uid);
+          } catch (err) {
+            console.log('Failed to track daily login, but continuing');
+          }
+        } else if (isAdmin) {
+          // Create user document for admin if it doesn't exist yet
+          createUserDocument(user);
+        }
+      })
+      .catch(err => {
+        console.error('Error loading user data:', err);
+        handleOfflineUser(user, isAdmin);
+      });
+  }
+  
+  // Handle user data when offline
+  function handleOfflineUser(user, isAdmin) {
+    const userPointsDisplay = document.getElementById('user-points-display');
+    const adminPanelLink = document.getElementById('admin-panel-link');
+    
+    // Create network indicator for offline mode
+    createNetworkIndicator();
+    
+    // Show offline notification, but don't make it too intrusive
+    showNotification("You're currently offline. Using cached data.", "info");
+    
+    // Set default user data for offline mode
+    if (userPointsDisplay) {
+      userPointsDisplay.textContent = "100"; // Default points for offline mode
+    }
+    
+    // Always enable admin panel for admin emails, even offline
+    if (isAdmin && adminPanelLink) {
+      adminPanelLink.classList.remove('hidden');
+    }
   }
 
   function trackDailyLogin(userId) {
@@ -680,8 +717,23 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     `;
 
+    // First check if we're offline to immediately render fallback UI
+    if (!navigator.onLine) {
+      console.log('Offline mode detected, showing offline homepage');
+      showDefaultHomePage(user);
+      return;
+    }
+
+    // Set timeout for faster offline detection
+    const timeoutId = setTimeout(() => {
+      console.log('Request timed out, showing offline homepage');
+      showDefaultHomePage(user);
+    }, 3000);
+    
     // Get user data from Firestore
     db.collection('users').doc(user.uid).get().then((doc) => {
+      clearTimeout(timeoutId); // Clear timeout since we got a response
+      
       if (doc.exists) {
         const userData = doc.data();
 
@@ -2322,10 +2374,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Check if we're offline
     if (!navigator.onLine) {
-      // Direct offline mode rendering for admins
+      console.log('Detected offline status, using offline admin panel');
       renderOfflineAdminPanel(user);
       return;
     }
+    
+    // Set timeout for faster offline detection
+    const timeoutId = setTimeout(() => {
+      console.log('Request timed out, showing offline admin panel');
+      renderOfflineAdminPanel(user);
+    }, 3000);
 
     // Try to get user data, but have fallback for offline mode
     db.collection('users').doc(user.uid).get().then((doc) => {
