@@ -2,6 +2,75 @@
 document.addEventListener('DOMContentLoaded', function() {
   // Hide loading screen after everything is loaded
   const loadingScreen = document.getElementById('loading-screen');
+  
+  // Network status tracking
+  let isOnline = navigator.onLine;
+  let networkStatusIndicator;
+  
+  // Add network status indicator to the body
+  function createNetworkIndicator() {
+    if (!networkStatusIndicator) {
+      networkStatusIndicator = document.createElement('div');
+      networkStatusIndicator.className = 'network-status';
+      networkStatusIndicator.innerHTML = `
+        <div class="network-status-icon ${isOnline ? 'online' : 'offline'}">
+          <i class="fas ${isOnline ? 'fa-wifi' : 'fa-wifi-slash'}"></i>
+        </div>
+        <div class="network-status-text">${isOnline ? 'Online' : 'Offline Mode'}</div>
+      `;
+      document.body.appendChild(networkStatusIndicator);
+      
+      // Add fade out after 5 seconds
+      setTimeout(() => {
+        if (networkStatusIndicator) {
+          networkStatusIndicator.classList.add('fade-out');
+        }
+      }, 5000);
+    } else {
+      // Update existing indicator
+      const icon = networkStatusIndicator.querySelector('.network-status-icon');
+      const text = networkStatusIndicator.querySelector('.network-status-text');
+      
+      if (icon) {
+        icon.className = `network-status-icon ${isOnline ? 'online' : 'offline'}`;
+        icon.innerHTML = `<i class="fas ${isOnline ? 'fa-wifi' : 'fa-wifi-slash'}"></i>`;
+      }
+      
+      if (text) {
+        text.textContent = isOnline ? 'Online' : 'Offline Mode';
+      }
+      
+      // Show again
+      networkStatusIndicator.classList.remove('fade-out');
+      networkStatusIndicator.classList.add('fade-in');
+      
+      // Fade out after delay
+      setTimeout(() => {
+        if (networkStatusIndicator) {
+          networkStatusIndicator.classList.remove('fade-in');
+          networkStatusIndicator.classList.add('fade-out');
+        }
+      }, 5000);
+    }
+  }
+  
+  // Add event listeners for online/offline events
+  window.addEventListener('online', function() {
+    isOnline = true;
+    createNetworkIndicator();
+    showNotification('You are back online! Syncing data...', 'success');
+    
+    // Reload data if user is authenticated
+    if (firebase.auth().currentUser) {
+      loadUserData(firebase.auth().currentUser);
+    }
+  });
+  
+  window.addEventListener('offline', function() {
+    isOnline = false;
+    createNetworkIndicator();
+    showNotification('You are offline. Limited functionality available.', 'warning');
+  });
 
   // Firebase Configuration
   const firebaseConfig = {
@@ -24,12 +93,17 @@ document.addEventListener('DOMContentLoaded', function() {
     .catch(err => {
       if (err.code == 'failed-precondition') {
         console.log('Multiple tabs open, persistence can only be enabled in one tab at a time.');
+        showNotification('Multiple tabs open. Offline mode may not work properly.', 'warning');
       } else if (err.code == 'unimplemented') {
         console.log('The current browser does not support offline persistence');
+        showNotification('Your browser does not support offline mode.', 'warning');
       }
     });
     
   const storage = firebase.storage();
+  
+  // Show initial network status
+  createNetworkIndicator();
 
   // Initialize the app UI
   initializeApp();
@@ -1558,6 +1632,214 @@ document.addEventListener('DOMContentLoaded', function() {
         channelItems.forEach(ch => ch.classList.remove('active'));
         
         // Add active class to clicked channel
+
+  // Function to render admin panel in offline mode
+  function renderOfflineAdminPanel(user) {
+    const mainContent = document.getElementById('main-content');
+    
+    // Use default data for offline mode
+    const offlineStats = {
+      totalUsers: 0,
+      activeTournaments: 0,
+      pointsDistributed: 0,
+      newUsers: 0,
+      recentUsers: [],
+      tournaments: []
+    };
+    
+    // Create default user data for offline mode
+    const userData = {
+      displayName: user.displayName || user.email.split('@')[0],
+      email: user.email,
+      isAdmin: true,
+      photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Admin'}&background=random&color=fff`
+    };
+    
+    mainContent.innerHTML = `
+      <div class="admin-layout">
+        <div class="admin-sidebar">
+          <div class="admin-logo">
+            <i class="fas fa-trophy"></i> Admin Panel
+          </div>
+          <div class="admin-user">
+            <img src="${userData.photoURL}" alt="Admin Avatar">
+            <div class="admin-user-info">
+              <div class="admin-user-name">${userData.displayName}</div>
+              <div class="admin-user-role">Administrator</div>
+            </div>
+          </div>
+          <ul class="admin-nav">
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
+                <i class="fas fa-tachometer-alt"></i> Dashboard
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="users">
+                <i class="fas fa-users"></i> User Management
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="tournaments">
+                <i class="fas fa-trophy"></i> Tournament Management
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="rewards">
+                <i class="fas fa-gift"></i> Rewards & Earnings
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="ads">
+                <i class="fas fa-ad"></i> Ad Management
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="settings">
+                <i class="fas fa-cog"></i> Settings
+              </a>
+            </li>
+            <li class="admin-nav-item admin-nav-back">
+              <a href="#" class="admin-nav-link" id="back-to-site">
+                <i class="fas fa-arrow-left"></i> Back to Site
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div class="admin-content">
+          <div id="admin-dashboard-page">
+            <div class="admin-header">
+              <h1 class="admin-title">Dashboard</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary" id="refresh-admin-data" disabled>
+                  <i class="fas fa-sync-alt"></i> Refresh Data
+                </button>
+              </div>
+            </div>
+
+            <div class="offline-notice">
+              <div class="alert warning">
+                <h3><i class="fas fa-wifi-slash"></i> Offline Mode</h3>
+                <p>You are currently in offline mode. Limited functionality is available.</p>
+                <p>Some features and data may not be accessible until you're back online.</p>
+              </div>
+            </div>
+
+            <div class="stats-grid mb-4">
+              <div class="stat-box">
+                <i class="fas fa-users"></i>
+                <div class="value">${offlineStats.totalUsers}</div>
+                <div class="label">Total Users</div>
+              </div>
+              <div class="stat-box">
+                <i class="fas fa-trophy"></i>
+                <div class="value">${offlineStats.activeTournaments}</div>
+                <div class="label">Active Tournaments</div>
+              </div>
+              <div class="stat-box">
+                <i class="fas fa-coins"></i>
+                <div class="value">${offlineStats.pointsDistributed}</div>
+                <div class="label">Points Distributed</div>
+              </div>
+              <div class="stat-box">
+                <i class="fas fa-user-plus"></i>
+                <div class="value">${offlineStats.newUsers}</div>
+                <div class="label">New Users (Today)</div>
+              </div>
+            </div>
+
+            <div class="admin-quick-actions mb-4">
+              <h2 class="mb-2">Quick Actions</h2>
+              <div class="quick-actions-grid">
+                <div class="quick-action-card disabled" id="create-tournament">
+                  <i class="fas fa-trophy"></i>
+                  <span>Create Tournament</span>
+                </div>
+                <div class="quick-action-card disabled" id="add-user">
+                  <i class="fas fa-user-plus"></i>
+                  <span>Add User</span>
+                </div>
+                <div class="quick-action-card disabled" id="edit-rewards">
+                  <i class="fas fa-gift"></i>
+                  <span>Edit Rewards</span>
+                </div>
+                <div class="quick-action-card" id="site-settings">
+                  <i class="fas fa-cog"></i>
+                  <span>Site Settings</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h2>Recent Users</h2>
+                <button class="btn btn-sm btn-primary" id="view-all-users" disabled>View All</button>
+              </div>
+              <div class="admin-table-container">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Join Date</th>
+                      <th>Points</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recent-users-table">
+                    <tr>
+                      <td colspan="5" class="text-center">No data available in offline mode</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h2>Upcoming Tournaments</h2>
+                <button class="btn btn-sm btn-primary" id="view-all-tournaments" disabled>View All</button>
+              </div>
+              <div class="admin-table-container">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Tournament</th>
+                      <th>Start Date</th>
+                      <th>Entry Fee</th>
+                      <th>Prize Pool</th>
+                      <th>Participants</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tournaments-table">
+                    <tr>
+                      <td colspan="6" class="text-center">No data available in offline mode</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Setup admin panel event listeners
+    setupAdminPanelEvents();
+
+    // Add event listener for "Back to Site" button
+    document.getElementById('back-to-site').addEventListener('click', (e) => {
+      e.preventDefault();
+      renderMainContent('home');
+    });
+
+    // Add event listener for site settings in offline mode
+    document.getElementById('site-settings').addEventListener('click', () => {
+      showAdminPage('settings');
+    });
+  }
+
         this.classList.add('active');
         
         // Update channel header
@@ -2038,6 +2320,13 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
+    // Check if we're offline
+    if (!navigator.onLine) {
+      // Direct offline mode rendering for admins
+      renderOfflineAdminPanel(user);
+      return;
+    }
+
     // Try to get user data, but have fallback for offline mode
     db.collection('users').doc(user.uid).get().then((doc) => {
       if (doc.exists) {
@@ -2355,57 +2644,91 @@ document.addEventListener('DOMContentLoaded', function() {
         tournaments: []
       };
 
-      // Try to get data from Firestore, but provide offline fallback data
-      db.collection('users').get().then(snapshot => {
-        stats.totalUsers = snapshot.size;
-        let totalPoints = 0;
-        let todayUsers = 0;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
+      // Check if we're offline
+      if (!navigator.onLine) {
+        console.log('Offline mode - using default stats');
+        // Use sample data for offline mode
+        stats.totalUsers = "—";
+        stats.activeTournaments = "—";
+        stats.pointsDistributed = "—";
+        stats.newUsers = "—";
+        resolve(stats);
+        return;
+      }
 
-        // Process users for recent list and stats
-        const recentUsers = [];
-        snapshot.forEach(doc => {
-          const userData = doc.data();
-          totalPoints += userData.points || 0;
-
-          // Check if user joined today
-          if (userData.joinDate && userData.joinDate.toDate() >= today) {
-            todayUsers++;
-          }
-
-          // Add to recent users array (limited to 5)
-          if (recentUsers.length < 5) {
-            recentUsers.push({
-              ...userData,
-              uid: doc.id
-            });
-          }
-        });
-
-        stats.pointsDistributed = totalPoints;
-        stats.newUsers = todayUsers;
-        stats.recentUsers = recentUsers;
-
-        // Get tournaments
-        db.collection('tournaments').get().then(snapshot => {
-          stats.activeTournaments = snapshot.size;
-
-          // Process tournaments for the list
-          const tournaments = [];
+      // Try to get data from Firestore with timeout
+      const timeoutPromise = new Promise((_, timeoutReject) => {
+        setTimeout(() => timeoutReject(new Error('Request timed out')), 10000);
+      });
+      
+      const fetchDataPromise = new Promise((dataResolve) => {
+        db.collection('users').get().then(snapshot => {
+          stats.totalUsers = snapshot.size;
+          let totalPoints = 0;
+          let todayUsers = 0;
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+  
+          // Process users for recent list and stats
+          const recentUsers = [];
           snapshot.forEach(doc => {
-            const tournamentData = doc.data();
-            tournaments.push({
-              ...tournamentData,
-              id: doc.id
-            });
+            const userData = doc.data();
+            totalPoints += userData.points || 0;
+  
+            // Check if user joined today
+            if (userData.joinDate && userData.joinDate.toDate() >= today) {
+              todayUsers++;
+            }
+  
+            // Add to recent users array (limited to 5)
+            if (recentUsers.length < 5) {
+              recentUsers.push({
+                ...userData,
+                uid: doc.id
+              });
+            }
           });
-
-          stats.tournaments = tournaments.slice(0, 5); // Limit to 5 tournaments
-
+  
+          stats.pointsDistributed = totalPoints;
+          stats.newUsers = todayUsers;
+          stats.recentUsers = recentUsers;
+  
+          // Get tournaments
+          db.collection('tournaments').get().then(snapshot => {
+            stats.activeTournaments = snapshot.size;
+  
+            // Process tournaments for the list
+            const tournaments = [];
+            snapshot.forEach(doc => {
+              const tournamentData = doc.data();
+              tournaments.push({
+                ...tournamentData,
+                id: doc.id
+              });
+            });
+  
+            stats.tournaments = tournaments.slice(0, 5); // Limit to 5 tournaments
+  
+            dataResolve(stats);
+          }).catch(error => {
+            console.error("Error loading tournaments:", error);
+            // Still resolve with partial data
+            dataResolve(stats);
+          });
+        }).catch(error => {
+          console.error("Error loading users:", error);
+          dataResolve(stats);
+        });
+      });
+      
+      // Race the data fetch against the timeout
+      Promise.race([fetchDataPromise, timeoutPromise])
+        .then(result => resolve(result))
+        .catch(error => {
+          console.error("Error or timeout loading admin stats:", error);
+          // Return default stats on error or timeout
           resolve(stats);
-        }).catch(reject);
-      }).catch(reject);
+        });
     });
   }
 
