@@ -22,6 +22,7 @@ const firebaseConfig = {
 
 // Declare global variables
 let auth, db, storage;
+let dbConnectionRetries = 0;
 
 try {
   // Initialize Firebase globally so it's accessible everywhere
@@ -42,22 +43,34 @@ try {
     merge: true
   });
   
-  // Enable offline persistence without deprecated method
-  try {
-    db.enablePersistence({
-      synchronizeTabs: true
-    }).catch(err => {
-      if (err.code === 'failed-precondition') {
-        console.log("Persistence failed: Multiple tabs open");
-      } else if (err.code === 'unimplemented') {
-        console.log("Persistence not supported by browser");
+  // Enable network first, then set up persistence
+  db.enableNetwork()
+    .then(() => {
+      console.log("Firebase network enabled successfully");
+      dbConnectionStatus = true;
+      
+      // Enable offline persistence - wrapped in a try block
+      try {
+        db.enablePersistence({
+          synchronizeTabs: true
+        }).catch(err => {
+          if (err.code === 'failed-precondition') {
+            console.log("Persistence failed: Multiple tabs open");
+          } else if (err.code === 'unimplemented') {
+            console.log("Persistence not supported by browser");
+          }
+        });
+      } catch (err) {
+        console.error("Error enabling persistence:", err);
       }
+    })
+    .catch(err => {
+      console.error("Error enabling network:", err);
+      dbConnectionStatus = false;
     });
-  } catch (err) {
-    console.error("Error enabling persistence:", err);
-  }
 } catch (err) {
   console.error("Firebase initialization error:", err);
+  dbConnectionStatus = false;
   // Show error notification for users
   if (typeof showNotification === 'function') {
     showNotification("Error connecting to database. Some features may not work.", "error");
@@ -147,22 +160,40 @@ document.addEventListener('DOMContentLoaded', function() {
       return Promise.resolve(false);
     }
     
-    return db.collection('users').limit(1).get()
-      .then(() => {
-        // Successfully got data, we're connected
-        if (!dbConnectionStatus) {
-          // If we were previously disconnected, notify the user
-          dbConnectionStatus = true;
-          showNotification('Database connection restored!', 'success');
-        }
-        return true;
-      })
-      .catch(error => {
-        // Failed to connect to database
-        dbConnectionStatus = false;
-        console.error('Database connectivity check failed:', error);
-        return false;
-      });
+    // Increase timeout for better connectivity check
+    return Promise.race([
+      db.collection('users').limit(1).get()
+        .then(() => {
+          // Successfully got data, we're connected
+          if (!dbConnectionStatus) {
+            // If we were previously disconnected, notify the user
+            dbConnectionStatus = true;
+            showNotification('Database connection restored!', 'success');
+          }
+          return true;
+        }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Connection timeout")), 10000)
+      )
+    ])
+    .then(result => {
+      return result;
+    })
+    .catch(error => {
+      // Only mark as offline if it's not a timeout error or we've tried multiple times
+      console.error('Database connectivity check failed:', error);
+      
+      // Don't immediately assume offline on first error
+      if (dbConnectionRetries < 2) {
+        dbConnectionRetries++;
+        console.log(`Retrying connection (attempt ${dbConnectionRetries})`);
+        return new Promise(resolve => setTimeout(() => 
+          resolve(checkDatabaseConnectivity()), 2000));
+      }
+      
+      dbConnectionStatus = false;
+      return false;
+    });
   }
   
   // Function to reload the current page content
@@ -218,12 +249,35 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log("Network enabling error:", err);
   });
   
-  // Set up periodic connectivity checks (every 30 seconds)
+  // Function to periodically check connection status and force online mode if available
+  function checkAndForceOnlineMode() {
+    if (navigator.onLine && !dbConnectionStatus) {
+      console.log('Internet appears to be available, attempting to reconnect');
+      dbConnectionRetries = 0;
+      
+      checkDatabaseConnectivity()
+        .then(isConnected => {
+          if (isConnected) {
+            console.log('Successfully reconnected to database');
+            // Reload current page content to use online mode
+            if (auth.currentUser) {
+              loadUserData(auth.currentUser);
+              reloadCurrentPage();
+            }
+          }
+        });
+    }
+  }
+  
+  // Set up periodic connectivity checks (every 20 seconds)
   setInterval(() => {
     if (navigator.onLine) {
       checkDatabaseConnectivity();
     }
-  }, 30000);
+    
+    // Try to force online mode if we're offline but internet is available
+    checkAndForceOnlineMode();
+  }, 20000);
   
   // Show initial network status
   createNetworkIndicator();
@@ -880,11 +934,14 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    // Set timeout for faster offline detection
+    // Set timeout for slower offline detection - increased from 3000ms to 8000ms
     const timeoutId = setTimeout(() => {
       console.log('Request timed out, showing offline homepage');
       showDefaultHomePage(user);
-    }, 3000);
+    }, 8000);
+    
+    // Reset connection retries before attempting new connection
+    dbConnectionRetries = 0;
     
     // Get user data from Firestore
     db.collection('users').doc(user.uid).get().then((doc) => {
@@ -2663,7 +2720,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
       
-      // Set timeout for faster offline detection (shorter timeout for better UX)
+      // Set timeout for offline detection with longer timeout
       const timeoutId = setTimeout(() => {
         console.log('Request timed out, showing offline admin panel');
         if (typeof window.renderOfflineAdminPanel === 'function') {
@@ -2671,7 +2728,10 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
           renderOfflineAdminPanel(user);
         }
-      }, 2000);
+      }, 8000);
+      
+      // Reset connection retries before attempting new connection
+      dbConnectionRetries = 0;
 
       // Make sure db is defined before using it
       if (!db) {
