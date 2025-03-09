@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Network status tracking
   let isOnline = navigator.onLine;
   let networkStatusIndicator;
+  let dbConnectionStatus = true; // Assume connected to begin with
   
   // Add network status indicator to the body
   function createNetworkIndicator() {
@@ -54,23 +55,91 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   
+  // Function to check Firebase database connectivity
+  function checkDatabaseConnectivity() {
+    // If we're already offline according to navigator, don't bother checking
+    if (!navigator.onLine) {
+      dbConnectionStatus = false;
+      return Promise.resolve(false);
+    }
+    
+    return db.collection('users').limit(1).get()
+      .then(() => {
+        // Successfully got data, we're connected
+        if (!dbConnectionStatus) {
+          // If we were previously disconnected, notify the user
+          dbConnectionStatus = true;
+          showNotification('Database connection restored!', 'success');
+        }
+        return true;
+      })
+      .catch(error => {
+        // Failed to connect to database
+        dbConnectionStatus = false;
+        console.error('Database connectivity check failed:', error);
+        return false;
+      });
+  }
+  
+  // Function to reload the current page content
+  function reloadCurrentPage() {
+    // Get the current page from navbar
+    const activeNavLink = document.querySelector('.nav-link.active');
+    if (activeNavLink) {
+      const page = activeNavLink.getAttribute('data-page');
+      if (page) {
+        renderMainContent(page);
+      } else {
+        // Default to home if no active page found
+        renderMainContent('home');
+      }
+    } else {
+      // Default to home if no active link found
+      renderMainContent('home');
+    }
+  }
+  
   // Add event listeners for online/offline events
   window.addEventListener('online', function() {
     isOnline = true;
     createNetworkIndicator();
     showNotification('You are back online! Syncing data...', 'success');
     
-    // Reload data if user is authenticated
-    if (firebase.auth().currentUser) {
-      loadUserData(firebase.auth().currentUser);
-    }
+    // Check database connectivity before reloading data
+    checkDatabaseConnectivity().then(isConnected => {
+      if (isConnected) {
+        // Reload data if user is authenticated
+        if (firebase.auth().currentUser) {
+          loadUserData(firebase.auth().currentUser);
+          
+          // Reload the current page to reflect online status
+          reloadCurrentPage();
+        }
+      } else {
+        // Internet is back but database is still not accessible
+        showNotification('Internet connection restored, but database is still unavailable.', 'warning');
+      }
+    });
   });
   
   window.addEventListener('offline', function() {
     isOnline = false;
+    dbConnectionStatus = false;
     createNetworkIndicator();
     showNotification('You are offline. Limited functionality available.', 'warning');
   });
+  
+  // Monitor Firebase connection state
+  db.enableNetwork().catch(err => {
+    console.log("Network enabling error:", err);
+  });
+  
+  // Set up periodic connectivity checks (every 30 seconds)
+  setInterval(() => {
+    if (navigator.onLine) {
+      checkDatabaseConnectivity();
+    }
+  }, 30000);
 
   // Firebase Configuration
   const firebaseConfig = {
@@ -412,21 +481,30 @@ document.addEventListener('DOMContentLoaded', function() {
     if (authButtons) authButtons.classList.add('hidden');
     if (userProfile) userProfile.classList.remove('hidden');
 
-    // Check if user is admin
+    // Check if user is admin based on email
     const isAdmin = user.email && (
       user.email === 'Jitenadminpanelaccess@gmail.com' || 
       user.email === 'karateboyjitenderprajapat@gmail.com' || 
       user.email.endsWith('@admin.tournamenthub.com')
     );
 
-    if (adminPanelLink && isAdmin) {
-      adminPanelLink.classList.remove('hidden');
-      
-      // Add click event listener for admin panel
-      adminPanelLink.addEventListener('click', function(e) {
-        e.preventDefault();
-        renderAdminPanel();
-      });
+    // Setup admin panel link if user is admin
+    if (adminPanelLink) {
+      if (isAdmin) {
+        adminPanelLink.classList.remove('hidden');
+        
+        // Remove any existing click listeners to prevent duplicates
+        const newAdminPanelLink = adminPanelLink.cloneNode(true);
+        adminPanelLink.parentNode.replaceChild(newAdminPanelLink, adminPanelLink);
+        
+        // Add click event listener for admin panel
+        newAdminPanelLink.addEventListener('click', function(e) {
+          e.preventDefault();
+          renderAdminPanel();
+        });
+      } else {
+        adminPanelLink.classList.add('hidden');
+      }
     }
 
     // Set default user data for immediate display (offline or not)
@@ -452,20 +530,26 @@ document.addEventListener('DOMContentLoaded', function() {
       .then((doc) => {
         if (doc.exists) {
           const userData = doc.data();
+          
+          // Update points display with real data
           if (userPointsDisplay) {
             userPointsDisplay.textContent = userData.points || 0;
           }
 
           // If this is an admin logging in, check and update admin status
           if (isAdmin && !userData.isAdmin) {
-            db.collection('users').doc(user.uid).update({
-              isAdmin: true
-            }).then(() => {
-              console.log('User updated with admin privileges');
-              showNotification('Admin privileges granted', 'success');
-            }).catch(err => {
+            try {
+              db.collection('users').doc(user.uid).update({
+                isAdmin: true
+              }).then(() => {
+                console.log('User updated with admin privileges');
+                showNotification('Admin privileges granted', 'success');
+              }).catch(err => {
+                console.log('Failed to update admin status, but continuing with admin privileges');
+              });
+            } catch (error) {
               console.log('Failed to update admin status, but continuing with admin privileges');
-            });
+            }
           }
           
           // After successful load, try to track daily login
@@ -474,8 +558,9 @@ document.addEventListener('DOMContentLoaded', function() {
           } catch (err) {
             console.log('Failed to track daily login, but continuing');
           }
-        } else if (isAdmin) {
-          // Create user document for admin if it doesn't exist yet
+        } else {
+          // User document doesn't exist, create one
+          console.log('User document not found, creating new one');
           createUserDocument(user);
         }
       })
@@ -504,7 +589,30 @@ document.addEventListener('DOMContentLoaded', function() {
     // Always enable admin panel for admin emails, even offline
     if (isAdmin && adminPanelLink) {
       adminPanelLink.classList.remove('hidden');
+      
+      // Remove any existing click listeners to prevent duplicates
+      const newAdminPanelLink = adminPanelLink.cloneNode(true);
+      adminPanelLink.parentNode.replaceChild(newAdminPanelLink, adminPanelLink);
+      
+      // Add click event listener for admin panel
+      newAdminPanelLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        renderAdminPanel();
+      });
     }
+    
+    // Set up listener to reload data when connection is restored
+    window.addEventListener('online', function onlineHandler() {
+      console.log('Back online, reloading user data');
+      window.removeEventListener('online', onlineHandler); // Remove to prevent duplicate calls
+      
+      // Small delay to ensure network is stable
+      setTimeout(() => {
+        if (navigator.onLine) {
+          loadUserData(user);
+        }
+      }, 1000);
+    });
   }
 
   function trackDailyLogin(userId) {
@@ -1691,10 +1799,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Use default data for offline mode
     const offlineStats = {
-      totalUsers: 0,
-      activeTournaments: 0,
-      pointsDistributed: 0,
-      newUsers: 0,
+      totalUsers: "—",
+      activeTournaments: "—",
+      pointsDistributed: "—",
+      newUsers: "—",
       recentUsers: [],
       tournaments: []
     };
@@ -1706,6 +1814,50 @@ document.addEventListener('DOMContentLoaded', function() {
       isAdmin: true,
       photoURL: user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Admin'}&background=random&color=fff`
     };
+    
+    // Create sample offline data for better UI experience
+    const sampleUsers = [
+      {
+        displayName: "Sample User",
+        email: "user@example.com",
+        photoURL: "https://ui-avatars.com/api/?name=Sample+User&background=random&color=fff",
+        joinDate: new Date(),
+        points: 100,
+        isVIP: false,
+        uid: "sample1"
+      },
+      {
+        displayName: userData.displayName,
+        email: userData.email,
+        photoURL: userData.photoURL,
+        joinDate: new Date(),
+        points: 1000,
+        isVIP: true,
+        isAdmin: true,
+        uid: "admin1"
+      }
+    ];
+    
+    const sampleTournaments = [
+      {
+        name: "Weekend Warrior",
+        startDate: new Date(Date.now() + 2*24*60*60*1000),
+        entryFee: 50,
+        prizePool: 1000,
+        participants: 32,
+        maxParticipants: 64,
+        id: "sample-t1"
+      },
+      {
+        name: "BGMI Champions",
+        startDate: new Date(Date.now() + 5*24*60*60*1000),
+        entryFee: 100,
+        prizePool: 5000,
+        participants: 45,
+        maxParticipants: 100,
+        id: "sample-t2"
+      }
+    ];
     
     mainContent.innerHTML = `
       <div class="admin-layout">
@@ -1803,15 +1955,15 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="admin-quick-actions mb-4">
               <h2 class="mb-2">Quick Actions</h2>
               <div class="quick-actions-grid">
-                <div class="quick-action-card disabled" id="create-tournament">
+                <div class="quick-action-card" id="create-tournament">
                   <i class="fas fa-trophy"></i>
                   <span>Create Tournament</span>
                 </div>
-                <div class="quick-action-card disabled" id="add-user">
+                <div class="quick-action-card" id="add-user">
                   <i class="fas fa-user-plus"></i>
                   <span>Add User</span>
                 </div>
-                <div class="quick-action-card disabled" id="edit-rewards">
+                <div class="quick-action-card" id="edit-rewards">
                   <i class="fas fa-gift"></i>
                   <span>Edit Rewards</span>
                 </div>
@@ -1825,7 +1977,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="admin-card">
               <div class="admin-card-header">
                 <h2>Recent Users</h2>
-                <button class="btn btn-sm btn-primary" id="view-all-users" disabled>View All</button>
+                <button class="btn btn-sm btn-primary" id="view-all-users">View All</button>
               </div>
               <div class="admin-table-container">
                 <table class="admin-table">
@@ -1839,9 +1991,30 @@ document.addEventListener('DOMContentLoaded', function() {
                     </tr>
                   </thead>
                   <tbody id="recent-users-table">
-                    <tr>
-                      <td colspan="5" class="text-center">No data available in offline mode</td>
-                    </tr>
+                    ${sampleUsers.map(user => `
+                      <tr>
+                        <td>
+                          <div class="user-cell">
+                            <img src="${user.photoURL}" alt="User Avatar">
+                            <div>
+                              <div class="user-name">${user.displayName}</div>
+                              <div class="user-email">${user.email}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>${user.joinDate.toLocaleDateString()}</td>
+                        <td>${user.points}</td>
+                        <td><span class="status-badge ${user.isVIP ? 'vip' : 'standard'}">${user.isVIP ? 'VIP' : 'Standard'}</span></td>
+                        <td>
+                          <div class="table-actions">
+                            <button class="btn btn-sm btn-primary edit-user" data-user-id="${user.uid}"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-sm btn-danger toggle-ban" data-user-id="${user.uid}">
+                              <i class="fas fa-user-slash"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    `).join('')}
                   </tbody>
                 </table>
               </div>
@@ -1850,7 +2023,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="admin-card">
               <div class="admin-card-header">
                 <h2>Upcoming Tournaments</h2>
-                <button class="btn btn-sm btn-primary" id="view-all-tournaments" disabled>View All</button>
+                <button class="btn btn-sm btn-primary" id="view-all-tournaments">View All</button>
               </div>
               <div class="admin-table-container">
                 <table class="admin-table">
@@ -1865,9 +2038,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     </tr>
                   </thead>
                   <tbody id="tournaments-table">
-                    <tr>
-                      <td colspan="6" class="text-center">No data available in offline mode</td>
-                    </tr>
+                    ${sampleTournaments.map(tournament => `
+                      <tr>
+                        <td>${tournament.name}</td>
+                        <td>${tournament.startDate.toLocaleDateString()}</td>
+                        <td>${tournament.entryFee} points</td>
+                        <td>${tournament.prizePool} points</td>
+                        <td>${tournament.participants}/${tournament.maxParticipants}</td>
+                        <td>
+                          <div class="table-actions">
+                            <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-edit"></i></button>
+                            <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-trash"></i></button>
+                          </div>
+                        </td>
+                      </tr>
+                    `).join('')}
                   </tbody>
                 </table>
               </div>
@@ -1886,9 +2071,49 @@ document.addEventListener('DOMContentLoaded', function() {
       renderMainContent('home');
     });
 
-    // Add event listener for site settings in offline mode
+    // Add event listeners for quick actions
+    document.getElementById('create-tournament').addEventListener('click', () => {
+      showAdminPage('tournaments');
+      showNotification("You're offline. Tournament creation will be available when you're back online.", "info");
+    });
+
+    document.getElementById('add-user').addEventListener('click', () => {
+      showAdminPage('users');
+      showNotification("You're offline. User creation will be available when you're back online.", "info");
+    });
+
+    document.getElementById('edit-rewards').addEventListener('click', () => {
+      showAdminPage('rewards');
+      showNotification("You're offline. Reward editing will be available when you're back online.", "info");
+    });
+
     document.getElementById('site-settings').addEventListener('click', () => {
       showAdminPage('settings');
+    });
+    
+    // Add event listener for View All buttons
+    document.getElementById('view-all-users').addEventListener('click', () => {
+      showAdminPage('users');
+    });
+    
+    document.getElementById('view-all-tournaments').addEventListener('click', () => {
+      showAdminPage('tournaments');
+    });
+    
+    // Add event listeners for action buttons
+    document.querySelectorAll('.edit-user, .toggle-ban, .edit-tournament, .delete-tournament').forEach(btn => {
+      btn.addEventListener('click', () => {
+        showNotification("You're offline. This action will be available when you're back online.", "info");
+      });
+    });
+    
+    // Check for online status change
+    window.addEventListener('online', function() {
+      showNotification("You're back online! Reloading admin panel...", "success");
+      // Reload the admin panel to get fresh data
+      setTimeout(() => {
+        renderAdminPanel();
+      }, 1000);
     });
   }
 
@@ -2372,7 +2597,7 @@ document.addEventListener('DOMContentLoaded', function() {
       return;
     }
 
-    // Check if we're offline
+    // Check if we're offline immediately to speed up load time when no internet
     if (!navigator.onLine) {
       console.log('Detected offline status, using offline admin panel');
       renderOfflineAdminPanel(user);
@@ -2385,274 +2610,47 @@ document.addEventListener('DOMContentLoaded', function() {
       renderOfflineAdminPanel(user);
     }, 3000);
 
-    // Try to get user data, but have fallback for offline mode
-    db.collection('users').doc(user.uid).get().then((doc) => {
-      if (doc.exists) {
-        const userData = doc.data();
-        const isAdmin = userData.isAdmin || 
-                       user.email === 'Jitenadminpanelaccess@gmail.com' || 
-                       user.email === 'karateboyjitenderprajapat@gmail.com' ||
-                       user.email.endsWith('@admin.tournamenthub.com');
-
-        if (isAdmin) {
-          // Set admin flag if not already set
-          if (!userData.isAdmin) {
-            db.collection('users').doc(user.uid).update({
-              isAdmin: true
-            });
+    // Try to get minimal user data with a simple existence check to verify connectivity
+    db.collection('users').doc(user.uid).get()
+      .then((doc) => {
+        // Clear timeout since we got a response
+        clearTimeout(timeoutId);
+        
+        // Assume admin status if email matches criteria - this is important for when a user's
+        // admin status hasn't been saved to the db yet but their email is an admin email
+        const isAdminUser = isAdmin || (doc.exists && doc.data().isAdmin);
+        
+        if (isAdminUser) {
+          // If we've confirmed the user, set admin flag in db if not already set
+          if (doc.exists && !doc.data().isAdmin && isAdmin) {
+            try {
+              db.collection('users').doc(user.uid).update({
+                isAdmin: true
+              });
+            } catch (err) {
+              // Non-critical error, can continue
+              console.log('Failed to update admin status, but continuing with admin privileges');
+            }
           }
 
           // Load stats for dashboard
-          loadAdminStats().then(stats => {
-            // Render admin panel with real stats
-            mainContent.innerHTML = `
-              <div class="admin-layout">
-                <div class="admin-sidebar">
-                  <div class="admin-logo">
-                    <i class="fas fa-trophy"></i> Admin Panel
-                  </div>
-                  <div class="admin-user">
-                    <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'Admin'}&background=random&color=fff`}" alt="Admin Avatar">
-                    <div class="admin-user-info">
-                      <div class="admin-user-name">${userData.displayName || user.email}</div>
-                      <div class="admin-user-role">Administrator</div>
-                    </div>
-                  </div>
-                  <ul class="admin-nav">
-                    <li class="admin-nav-item">
-                      <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
-                        <i class="fas fa-tachometer-alt"></i> Dashboard
-                      </a>
-                    </li>
-                    <li class="admin-nav-item">
-                      <a href="#" class="admin-nav-link" data-admin-page="users">
-                        <i class="fas fa-users"></i> User Management
-                      </a>
-                    </li>
-                    <li class="admin-nav-item">
-                      <a href="#" class="admin-nav-link" data-admin-page="tournaments">
-                        <i class="fas fa-trophy"></i> Tournament Management
-                      </a>
-                    </li>
-                    <li class="admin-nav-item">
-                      <a href="#" class="admin-nav-link" data-admin-page="rewards">
-                        <i class="fas fa-gift"></i> Rewards & Earnings
-                      </a>
-                    </li>
-                    <li class="admin-nav-item">
-                      <a href="#" class="admin-nav-link" data-admin-page="ads">
-                        <i class="fas fa-ad"></i> Ad Management
-                      </a>
-                    </li>
-                    <li class="admin-nav-item">
-                      <a href="#" class="admin-nav-link" data-admin-page="settings">
-                        <i class="fas fa-cog"></i> Settings
-                      </a>
-                    </li>
-                    <li class="admin-nav-item admin-nav-back">
-                      <a href="#" class="admin-nav-link" id="back-to-site">
-                        <i class="fas fa-arrow-left"></i> Back to Site
-                      </a>
-                    </li>
-                  </ul>
-                </div>
-                <div class="admin-content">
-                  <div id="admin-dashboard-page">
-                    <div class="admin-header">
-                      <h1 class="admin-title">Dashboard</h1>
-                      <div class="admin-actions">
-                        <button class="btn btn-primary" id="refresh-admin-data">
-                          <i class="fas fa-sync-alt"></i> Refresh Data
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="stats-grid mb-4">
-                      <div class="stat-box">
-                        <i class="fas fa-users"></i>
-                        <div class="value">${stats.totalUsers}</div>
-                        <div class="label">Total Users</div>
-                      </div>
-                      <div class="stat-box">
-                        <i class="fas fa-trophy"></i>
-                        <div class="value">${stats.activeTournaments}</div>
-                        <div class="label">Active Tournaments</div>
-                      </div>
-                      <div class="stat-box">
-                        <i class="fas fa-coins"></i>
-                        <div class="value">${stats.pointsDistributed}</div>
-                        <div class="label">Points Distributed</div>
-                      </div>
-                      <div class="stat-box">
-                        <i class="fas fa-user-plus"></i>
-                        <div class="value">${stats.newUsers}</div>
-                        <div class="label">New Users (Today)</div>
-                      </div>
-                    </div>
-
-                    <div class="admin-quick-actions mb-4">
-                      <h2 class="mb-2">Quick Actions</h2>
-                      <div class="quick-actions-grid">
-                        <div class="quick-action-card" id="create-tournament">
-                          <i class="fas fa-trophy"></i>
-                          <span>Create Tournament</span>
-                        </div>
-                        <div class="quick-action-card" id="add-user">
-                          <i class="fas fa-user-plus"></i>
-                          <span>Add User</span>
-                        </div>
-                        <div class="quick-action-card" id="edit-rewards">
-                          <i class="fas fa-gift"></i>
-                          <span>Edit Rewards</span>
-                        </div>
-                        <div class="quick-action-card" id="site-settings">
-                          <i class="fas fa-cog"></i>
-                          <span>Site Settings</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="admin-card">
-                      <div class="admin-card-header">
-                        <h2>Recent Users</h2>
-                        <button class="btn btn-sm btn-primary" id="view-all-users">View All</button>
-                      </div>
-                      <div class="admin-table-container">
-                        <table class="admin-table">
-                          <thead>
-                            <tr>
-                              <th>User</th>
-                              <th>Join Date</th>
-                              <th>Points</th>
-                              <th>Status</th>
-                              <th>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody id="recent-users-table">
-                            ${stats.recentUsers.length > 0 ? 
-                              stats.recentUsers.map(user => `
-                                <tr>
-                                  <td>
-                                    <div class="user-cell">
-                                      <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName}&background=random&color=fff`}" alt="User Avatar">
-                                      <div>
-                                        <div class="user-name">${user.displayName}</div>
-                                        <div class="user-email">${user.email}</div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td>${new Date(user.joinDate.toDate()).toLocaleDateString()}</td>
-                                  <td>${user.points}</td>
-                                  <td><span class="status-badge ${user.isVIP ? 'vip' : 'standard'}">${user.isVIP ? 'VIP' : 'Standard'}</span></td>
-                                  <td>
-                                    <div class="table-actions">
-                                      <button class="btn btn-sm btn-primary edit-user" data-user-id="${user.uid}"><i class="fas fa-edit"></i></button>
-                                      <button class="btn btn-sm ${user.isBanned ? 'btn-success' : 'btn-danger'} toggle-ban" data-user-id="${user.uid}">
-                                        <i class="fas ${user.isBanned ? 'fa-user-check' : 'fa-user-slash'}"></i>
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              `).join('') : 
-                              '<tr><td colspan="5" class="text-center">No users found</td></tr>'
-                            }
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div class="admin-card">
-                      <div class="admin-card-header">
-                        <h2>Upcoming Tournaments</h2>
-                        <button class="btn btn-sm btn-primary" id="view-all-tournaments">View All</button>
-                      </div>
-                      <div class="admin-table-container">
-                        <table class="admin-table">
-                          <thead>
-                            <tr>
-                              <th>Tournament</th>
-                              <th>Start Date</th>
-                              <th>Entry Fee</th>
-                              <th>Prize Pool</th>
-                              <th>Participants</th>
-                              <th>Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody id="tournaments-table">
-                            ${stats.tournaments.length > 0 ? 
-                              stats.tournaments.map(tournament => `
-                                <tr>
-                                  <td>${tournament.name}</td>
-                                  <td>${new Date(tournament.startDate).toLocaleDateString()}</td>
-                                  <td>${tournament.entryFee} points</td>
-                                  <td>${tournament.prizePool} points</td>
-                                  <td>${tournament.participants}/${tournament.maxParticipants}</td>
-                                  <td>
-                                    <div class="table-actions">
-                                      <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-edit"></i></button>
-                                      <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-trash"></i></button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              `).join('') :
-                              '<tr><td colspan="6" class="text-center">No tournaments found</td></tr>'
-                            }
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            `;
-
-            // Setup admin panel event listeners
-            setupAdminPanelEvents();
-
-            // Add event listener for "Back to Site" button
-            document.getElementById('back-to-site').addEventListener('click', (e) => {
-              e.preventDefault();
-              renderMainContent('home');
-            });
-
-            // Add event listener for "Refresh Data" button
-            document.getElementById('refresh-admin-data').addEventListener('click', () => {
-              loadAdminStats().then(updatedStats => {
-                // Update dashboard stats
-                document.querySelectorAll('.stat-box .value')[0].textContent = updatedStats.totalUsers;
-                document.querySelectorAll('.stat-box .value')[1].textContent = updatedStats.activeTournaments;
-                document.querySelectorAll('.stat-box .value')[2].textContent = updatedStats.pointsDistributed;
-                document.querySelectorAll('.stat-box .value')[3].textContent = updatedStats.newUsers;
-
-                // Update tables as needed
-                showNotification("Dashboard data refreshed", "success");
+          loadAdminStats()
+            .then(stats => {
+              // Successfully loaded, now render the admin panel with real stats
+              renderAdminDashboard(user, doc.exists ? doc.data() : { displayName: user.displayName || user.email.split('@')[0] }, stats);
+            })
+            .catch(err => {
+              console.error("Error loading admin stats:", err);
+              // If we can't load stats but we know user is admin, still show admin panel with default data
+              renderAdminDashboard(user, doc.exists ? doc.data() : { displayName: user.displayName || user.email.split('@')[0] }, {
+                totalUsers: "-",
+                activeTournaments: "-",
+                pointsDistributed: "-",
+                newUsers: "-",
+                recentUsers: [],
+                tournaments: []
               });
             });
-
-            // Add event listeners for quick action cards
-            document.getElementById('create-tournament').addEventListener('click', () => {
-              showAdminPage('tournaments');
-              // Would typically show a tournament creation form
-              showNotification("Tournament creation coming soon", "info");
-            });
-
-            document.getElementById('add-user').addEventListener('click', () => {
-              showAdminPage('users');
-              // Would typically show a user creation form
-              showNotification("User creation coming soon", "info");
-            });
-
-            document.getElementById('edit-rewards').addEventListener('click', () => {
-              showAdminPage('rewards');
-            });
-
-            document.getElementById('site-settings').addEventListener('click', () => {
-              showAdminPage('settings');
-            });
-          }).catch(err => {
-            console.error("Error loading admin stats:", err);
-            showNotification("Error loading admin dashboard", "error");
-          });
         } else {
           // Not an admin
           mainContent.innerHTML = `
@@ -2670,23 +2668,440 @@ document.addEventListener('DOMContentLoaded', function() {
             renderMainContent('home');
           });
         }
-      }
-    }).catch(err => {
-      console.error("Error checking admin status:", err);
-      mainContent.innerHTML = `
-        <div class="container">
-          <div class="alert error">
-            <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
-            <p>There was an error loading the admin panel. Please try again later.</p>
-            <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+      })
+      .catch(err => {
+        // Clear timeout since we got a response (even if it's an error)
+        clearTimeout(timeoutId);
+        
+        console.error("Error checking admin status:", err);
+        
+        // If we encounter an error but know the user should be admin based on email, still show admin panel
+        if (isAdmin) {
+          console.log("Showing offline admin panel due to database error");
+          renderOfflineAdminPanel(user);
+        } else {
+          mainContent.innerHTML = `
+            <div class="container">
+              <div class="alert error">
+                <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
+                <p>There was an error loading the admin panel. Please try again later.</p>
+                <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+              </div>
+            </div>
+          `;
+
+          document.getElementById('back-to-home').addEventListener('click', () => {
+            renderMainContent('home');
+          });
+        }
+      });
+  }
+  
+  // Function to render the admin dashboard with data
+  function renderAdminDashboard(user, userData, stats) {
+    const mainContent = document.getElementById('main-content');
+    if (!mainContent) return;
+    
+    mainContent.innerHTML = `
+      <div class="admin-layout">
+        <div class="admin-sidebar">
+          <div class="admin-logo">
+            <i class="fas fa-trophy"></i> Admin Panel
+          </div>
+          <div class="admin-user">
+            <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${userData.displayName || 'Admin'}&background=random&color=fff`}" alt="Admin Avatar">
+            <div class="admin-user-info">
+              <div class="admin-user-name">${userData.displayName || user.email}</div>
+              <div class="admin-user-role">Administrator</div>
+            </div>
+          </div>
+          <ul class="admin-nav">
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link active" data-admin-page="dashboard">
+                <i class="fas fa-tachometer-alt"></i> Dashboard
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="users">
+                <i class="fas fa-users"></i> User Management
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="tournaments">
+                <i class="fas fa-trophy"></i> Tournament Management
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="rewards">
+                <i class="fas fa-gift"></i> Rewards & Earnings
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="ads">
+                <i class="fas fa-ad"></i> Ad Management
+              </a>
+            </li>
+            <li class="admin-nav-item">
+              <a href="#" class="admin-nav-link" data-admin-page="settings">
+                <i class="fas fa-cog"></i> Settings
+              </a>
+            </li>
+            <li class="admin-nav-item admin-nav-back">
+              <a href="#" class="admin-nav-link" id="back-to-site">
+                <i class="fas fa-arrow-left"></i> Back to Site
+              </a>
+            </li>
+          </ul>
+        </div>
+        <div class="admin-content">
+          <div id="admin-dashboard-page">
+            <div class="admin-header">
+              <h1 class="admin-title">Dashboard</h1>
+              <div class="admin-actions">
+                <button class="btn btn-primary" id="refresh-admin-data">
+                  <i class="fas fa-sync-alt"></i> Refresh Data
+                </button>
+              </div>
+            </div>
+            
+            ${!navigator.onLine ? `
+            <div class="offline-notice">
+              <div class="alert warning">
+                <h3><i class="fas fa-wifi-slash"></i> Offline Mode</h3>
+                <p>You are currently in offline mode. Limited functionality is available.</p>
+                <p>Some features may not be accessible until you're back online.</p>
+              </div>
+            </div>
+            ` : ''}
+
+            <div class="stats-grid mb-4">
+              <div class="stat-box">
+                <i class="fas fa-users"></i>
+                <div class="value">${stats.totalUsers}</div>
+                <div class="label">Total Users</div>
+              </div>
+              <div class="stat-box">
+                <i class="fas fa-trophy"></i>
+                <div class="value">${stats.activeTournaments}</div>
+                <div class="label">Active Tournaments</div>
+              </div>
+              <div class="stat-box">
+                <i class="fas fa-coins"></i>
+                <div class="value">${stats.pointsDistributed}</div>
+                <div class="label">Points Distributed</div>
+              </div>
+              <div class="stat-box">
+                <i class="fas fa-user-plus"></i>
+                <div class="value">${stats.newUsers}</div>
+                <div class="label">New Users (Today)</div>
+              </div>
+            </div>
+
+            <div class="admin-quick-actions mb-4">
+              <h2 class="mb-2">Quick Actions</h2>
+              <div class="quick-actions-grid">
+                <div class="quick-action-card" id="create-tournament">
+                  <i class="fas fa-trophy"></i>
+                  <span>Create Tournament</span>
+                </div>
+                <div class="quick-action-card" id="add-user">
+                  <i class="fas fa-user-plus"></i>
+                  <span>Add User</span>
+                </div>
+                <div class="quick-action-card" id="edit-rewards">
+                  <i class="fas fa-gift"></i>
+                  <span>Edit Rewards</span>
+                </div>
+                <div class="quick-action-card" id="site-settings">
+                  <i class="fas fa-cog"></i>
+                  <span>Site Settings</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h2>Recent Users</h2>
+                <button class="btn btn-sm btn-primary" id="view-all-users">View All</button>
+              </div>
+              <div class="admin-table-container">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Join Date</th>
+                      <th>Points</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="recent-users-table">
+                    ${stats.recentUsers && stats.recentUsers.length > 0 ? 
+                      stats.recentUsers.map(user => `
+                        <tr>
+                          <td>
+                            <div class="user-cell">
+                              <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random&color=fff`}" alt="User Avatar">
+                              <div>
+                                <div class="user-name">${user.displayName || 'User'}</div>
+                                <div class="user-email">${user.email || ''}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td>${user.joinDate ? new Date(user.joinDate.toDate ? user.joinDate.toDate() : user.joinDate).toLocaleDateString() : 'N/A'}</td>
+                          <td>${user.points || 0}</td>
+                          <td><span class="status-badge ${user.isVIP ? 'vip' : 'standard'}">${user.isVIP ? 'VIP' : 'Standard'}</span></td>
+                          <td>
+                            <div class="table-actions">
+                              <button class="btn btn-sm btn-primary edit-user" data-user-id="${user.uid}"><i class="fas fa-edit"></i></button>
+                              <button class="btn btn-sm ${user.isBanned ? 'btn-success' : 'btn-danger'} toggle-ban" data-user-id="${user.uid}">
+                                <i class="fas ${user.isBanned ? 'fa-user-check' : 'fa-user-slash'}"></i>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      `).join('') : 
+                      '<tr><td colspan="5" class="text-center">No users found</td></tr>'
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="admin-card">
+              <div class="admin-card-header">
+                <h2>Upcoming Tournaments</h2>
+                <button class="btn btn-sm btn-primary" id="view-all-tournaments">View All</button>
+              </div>
+              <div class="admin-table-container">
+                <table class="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Tournament</th>
+                      <th>Start Date</th>
+                      <th>Entry Fee</th>
+                      <th>Prize Pool</th>
+                      <th>Participants</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tournaments-table">
+                    ${stats.tournaments && stats.tournaments.length > 0 ? 
+                      stats.tournaments.map(tournament => `
+                        <tr>
+                          <td>${tournament.name || 'Tournament'}</td>
+                          <td>${tournament.startDate ? new Date(tournament.startDate).toLocaleDateString() : 'TBD'}</td>
+                          <td>${tournament.entryFee || 0} points</td>
+                          <td>${tournament.prizePool || 0} points</td>
+                          <td>${tournament.participants || 0}/${tournament.maxParticipants || 100}</td>
+                          <td>
+                            <div class="table-actions">
+                              <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-edit"></i></button>
+                              <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-trash"></i></button>
+                            </div>
+                          </td>
+                        </tr>
+                      `).join('') :
+                      '<tr><td colspan="6" class="text-center">No tournaments found</td></tr>'
+                    }
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
-      `;
+      </div>
+    `;
 
-      document.getElementById('back-to-home').addEventListener('click', () => {
-        renderMainContent('home');
+    // Setup admin panel event listeners
+    setupAdminPanelEvents();
+
+    // Add event listener for "Back to Site" button
+    document.getElementById('back-to-site').addEventListener('click', (e) => {
+      e.preventDefault();
+      renderMainContent('home');
+    });
+
+    // Add event listener for "Refresh Data" button
+    document.getElementById('refresh-admin-data').addEventListener('click', () => {
+      if (!navigator.onLine) {
+        showNotification("You're offline. Cannot refresh data at this time.", "warning");
+        return;
+      }
+      
+      // Show loading indicator on button
+      const refreshBtn = document.getElementById('refresh-admin-data');
+      const originalText = refreshBtn.innerHTML;
+      refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+      refreshBtn.disabled = true;
+      
+      // Try to load fresh stats
+      loadAdminStats().then(updatedStats => {
+        // Update dashboard stats
+        document.querySelectorAll('.stat-box .value')[0].textContent = updatedStats.totalUsers;
+        document.querySelectorAll('.stat-box .value')[1].textContent = updatedStats.activeTournaments;
+        document.querySelectorAll('.stat-box .value')[2].textContent = updatedStats.pointsDistributed;
+        document.querySelectorAll('.stat-box .value')[3].textContent = updatedStats.newUsers;
+        
+        // Update tables with new data
+        updateAdminTables(updatedStats);
+        
+        // Reset button
+        refreshBtn.innerHTML = originalText;
+        refreshBtn.disabled = false;
+        
+        showNotification("Dashboard data refreshed", "success");
+      }).catch(err => {
+        console.error("Error refreshing data:", err);
+        // Reset button
+        refreshBtn.innerHTML = originalText;
+        refreshBtn.disabled = false;
+        showNotification("Failed to refresh data. Please try again.", "error");
       });
     });
+
+    // Add event listeners for quick action cards
+    document.getElementById('create-tournament').addEventListener('click', () => {
+      showAdminPage('tournaments');
+      showTournamentCreationModal();
+    });
+
+    document.getElementById('add-user').addEventListener('click', () => {
+      showAdminPage('users');
+      showUserCreationModal();
+    });
+
+    document.getElementById('edit-rewards').addEventListener('click', () => {
+      showAdminPage('rewards');
+    });
+
+    document.getElementById('site-settings').addEventListener('click', () => {
+      showAdminPage('settings');
+    });
+  }
+  
+  // Update admin tables without full page refresh
+  function updateAdminTables(stats) {
+    // Update users table
+    const usersTable = document.getElementById('recent-users-table');
+    if (usersTable && stats.recentUsers && stats.recentUsers.length > 0) {
+      usersTable.innerHTML = stats.recentUsers.map(user => `
+        <tr>
+          <td>
+            <div class="user-cell">
+              <img src="${user.photoURL || `https://ui-avatars.com/api/?name=${user.displayName || 'User'}&background=random&color=fff`}" alt="User Avatar">
+              <div>
+                <div class="user-name">${user.displayName || 'User'}</div>
+                <div class="user-email">${user.email || ''}</div>
+              </div>
+            </div>
+          </td>
+          <td>${user.joinDate ? new Date(user.joinDate.toDate ? user.joinDate.toDate() : user.joinDate).toLocaleDateString() : 'N/A'}</td>
+          <td>${user.points || 0}</td>
+          <td><span class="status-badge ${user.isVIP ? 'vip' : 'standard'}">${user.isVIP ? 'VIP' : 'Standard'}</span></td>
+          <td>
+            <div class="table-actions">
+              <button class="btn btn-sm btn-primary edit-user" data-user-id="${user.uid}"><i class="fas fa-edit"></i></button>
+              <button class="btn btn-sm ${user.isBanned ? 'btn-success' : 'btn-danger'} toggle-ban" data-user-id="${user.uid}">
+                <i class="fas ${user.isBanned ? 'fa-user-check' : 'fa-user-slash'}"></i>
+              </button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    } else if (usersTable) {
+      usersTable.innerHTML = '<tr><td colspan="5" class="text-center">No users found</td></tr>';
+    }
+    
+    // Update tournaments table
+    const tournamentsTable = document.getElementById('tournaments-table');
+    if (tournamentsTable && stats.tournaments && stats.tournaments.length > 0) {
+      tournamentsTable.innerHTML = stats.tournaments.map(tournament => `
+        <tr>
+          <td>${tournament.name || 'Tournament'}</td>
+          <td>${tournament.startDate ? new Date(tournament.startDate).toLocaleDateString() : 'TBD'}</td>
+          <td>${tournament.entryFee || 0} points</td>
+          <td>${tournament.prizePool || 0} points</td>
+          <td>${tournament.participants || 0}/${tournament.maxParticipants || 100}</td>
+          <td>
+            <div class="table-actions">
+              <button class="btn btn-sm btn-primary edit-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-edit"></i></button>
+              <button class="btn btn-sm btn-danger delete-tournament" data-tournament-id="${tournament.id}"><i class="fas fa-trash"></i></button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+    } else if (tournamentsTable) {
+      tournamentsTable.innerHTML = '<tr><td colspan="6" class="text-center">No tournaments found</td></tr>';
+    }
+    
+    // Setup action button event listeners again
+    setupAdminTableActionButtons();
+  }
+  
+  function setupAdminTableActionButtons() {
+    // Setup edit user buttons
+    document.querySelectorAll('.edit-user').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const userId = this.getAttribute('data-user-id');
+        showUserEditModal(userId);
+      });
+    });
+    
+    // Setup toggle ban buttons
+    document.querySelectorAll('.toggle-ban').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const userId = this.getAttribute('data-user-id');
+        const isBanned = this.classList.contains('btn-success');
+        toggleUserBan(userId, isBanned);
+      });
+    });
+    
+    // Setup edit tournament buttons
+    document.querySelectorAll('.edit-tournament').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const tournamentId = this.getAttribute('data-tournament-id');
+        showTournamentEditModal(tournamentId);
+      });
+    });
+    
+    // Setup delete tournament buttons
+    document.querySelectorAll('.delete-tournament').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const tournamentId = this.getAttribute('data-tournament-id');
+        showDeleteTournamentConfirmation(tournamentId);
+      });
+    });
+  }
+  
+  // Show tournament creation modal
+  function showTournamentCreationModal() {
+    showNotification("Tournament creation feature coming soon", "info");
+  }
+  
+  // Show user creation modal
+  function showUserCreationModal() {
+    showNotification("User creation feature coming soon", "info");
+  }
+  
+  // Show user edit modal
+  function showUserEditModal(userId) {
+    showNotification("User editing feature coming soon", "info");
+  }
+  
+  // Toggle user ban status
+  function toggleUserBan(userId, isBanned) {
+    showNotification(`User ${isBanned ? 'unbanning' : 'banning'} feature coming soon`, "info");
+  }
+  
+  // Show tournament edit modal
+  function showTournamentEditModal(tournamentId) {
+    showNotification("Tournament editing feature coming soon", "info");
+  }
+  
+  // Show delete tournament confirmation
+  function showDeleteTournamentConfirmation(tournamentId) {
+    showNotification("Tournament deletion feature coming soon", "info");
   }
 
   // Function to load admin dashboard stats
@@ -2702,7 +3117,7 @@ document.addEventListener('DOMContentLoaded', function() {
         tournaments: []
       };
 
-      // Check if we're offline
+      // Check if we're offline immediately
       if (!navigator.onLine) {
         console.log('Offline mode - using default stats');
         // Use sample data for offline mode
@@ -2710,73 +3125,72 @@ document.addEventListener('DOMContentLoaded', function() {
         stats.activeTournaments = "—";
         stats.pointsDistributed = "—";
         stats.newUsers = "—";
+        
+        // Create sample data for better UI experience
+        stats.recentUsers = [
+          {
+            displayName: "Sample User",
+            email: "user@example.com",
+            photoURL: "https://ui-avatars.com/api/?name=Sample+User&background=random&color=fff",
+            joinDate: firebase.firestore.Timestamp.fromDate(new Date()),
+            points: 100,
+            isVIP: false,
+            uid: "sample1"
+          },
+          {
+            displayName: "Admin User",
+            email: "admin@tournamenthub.com",
+            photoURL: "https://ui-avatars.com/api/?name=Admin+User&background=random&color=fff",
+            joinDate: firebase.firestore.Timestamp.fromDate(new Date()),
+            points: 1000,
+            isVIP: true,
+            isAdmin: true,
+            uid: "admin1"
+          }
+        ];
+        
+        stats.tournaments = [
+          {
+            name: "Weekend Warrior",
+            startDate: new Date(Date.now() + 2*24*60*60*1000),
+            entryFee: 50,
+            prizePool: 1000,
+            participants: 32,
+            maxParticipants: 64,
+            id: "sample-t1"
+          },
+          {
+            name: "BGMI Champions",
+            startDate: new Date(Date.now() + 5*24*60*60*1000),
+            entryFee: 100,
+            prizePool: 5000,
+            participants: 45,
+            maxParticipants: 100,
+            id: "sample-t2"
+          }
+        ];
+        
         resolve(stats);
         return;
       }
 
       // Try to get data from Firestore with timeout
       const timeoutPromise = new Promise((_, timeoutReject) => {
-        setTimeout(() => timeoutReject(new Error('Request timed out')), 10000);
+        setTimeout(() => timeoutReject(new Error('Request timed out')), 5000); // Reduced timeout for better UX
       });
       
       const fetchDataPromise = new Promise((dataResolve) => {
-        db.collection('users').get().then(snapshot => {
-          stats.totalUsers = snapshot.size;
-          let totalPoints = 0;
-          let todayUsers = 0;
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-  
-          // Process users for recent list and stats
-          const recentUsers = [];
-          snapshot.forEach(doc => {
-            const userData = doc.data();
-            totalPoints += userData.points || 0;
-  
-            // Check if user joined today
-            if (userData.joinDate && userData.joinDate.toDate() >= today) {
-              todayUsers++;
-            }
-  
-            // Add to recent users array (limited to 5)
-            if (recentUsers.length < 5) {
-              recentUsers.push({
-                ...userData,
-                uid: doc.id
-              });
-            }
+        // First check if we can at least access the database
+        db.collection('users').limit(1).get()
+          .then(() => {
+            // If we can access the database, proceed with the full data fetch
+            fetchFullAdminStats(stats, dataResolve);
+          })
+          .catch(error => {
+            console.error("Error accessing database:", error);
+            // Network error, use default stats
+            dataResolve(getSampleStats());
           });
-  
-          stats.pointsDistributed = totalPoints;
-          stats.newUsers = todayUsers;
-          stats.recentUsers = recentUsers;
-  
-          // Get tournaments
-          db.collection('tournaments').get().then(snapshot => {
-            stats.activeTournaments = snapshot.size;
-  
-            // Process tournaments for the list
-            const tournaments = [];
-            snapshot.forEach(doc => {
-              const tournamentData = doc.data();
-              tournaments.push({
-                ...tournamentData,
-                id: doc.id
-              });
-            });
-  
-            stats.tournaments = tournaments.slice(0, 5); // Limit to 5 tournaments
-  
-            dataResolve(stats);
-          }).catch(error => {
-            console.error("Error loading tournaments:", error);
-            // Still resolve with partial data
-            dataResolve(stats);
-          });
-        }).catch(error => {
-          console.error("Error loading users:", error);
-          dataResolve(stats);
-        });
       });
       
       // Race the data fetch against the timeout
@@ -2785,9 +3199,134 @@ document.addEventListener('DOMContentLoaded', function() {
         .catch(error => {
           console.error("Error or timeout loading admin stats:", error);
           // Return default stats on error or timeout
-          resolve(stats);
+          resolve(getSampleStats());
         });
     });
+  }
+  
+  // Helper function to fetch full admin stats
+  function fetchFullAdminStats(stats, dataResolve) {
+    db.collection('users').get()
+      .then(snapshot => {
+        stats.totalUsers = snapshot.size;
+        let totalPoints = 0;
+        let todayUsers = 0;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        // Process users for recent list and stats
+        const recentUsers = [];
+        snapshot.forEach(doc => {
+          try {
+            const userData = doc.data();
+            totalPoints += userData.points || 0;
+
+            // Check if user joined today
+            if (userData.joinDate && userData.joinDate.toDate() >= today) {
+              todayUsers++;
+            }
+
+            // Add to recent users array (limited to 5)
+            if (recentUsers.length < 5) {
+              recentUsers.push({
+                ...userData,
+                uid: doc.id
+              });
+            }
+          } catch (err) {
+            console.log("Error processing user data:", err);
+            // Continue to next user
+          }
+        });
+
+        stats.pointsDistributed = totalPoints;
+        stats.newUsers = todayUsers;
+        stats.recentUsers = recentUsers;
+
+        // Get tournaments
+        db.collection('tournaments').get()
+          .then(snapshot => {
+            stats.activeTournaments = snapshot.size;
+
+            // Process tournaments for the list
+            const tournaments = [];
+            snapshot.forEach(doc => {
+              try {
+                const tournamentData = doc.data();
+                tournaments.push({
+                  ...tournamentData,
+                  id: doc.id
+                });
+              } catch (err) {
+                console.log("Error processing tournament data:", err);
+                // Continue to next tournament
+              }
+            });
+
+            stats.tournaments = tournaments.slice(0, 5); // Limit to 5 tournaments
+            dataResolve(stats);
+          })
+          .catch(error => {
+            console.error("Error loading tournaments:", error);
+            // Still resolve with partial data
+            dataResolve(stats);
+          });
+      })
+      .catch(error => {
+        console.error("Error loading users:", error);
+        dataResolve(getSampleStats());
+      });
+  }
+  
+  // Helper function to get sample stats for better UI experience
+  function getSampleStats() {
+    return {
+      totalUsers: "—",
+      activeTournaments: "—",
+      pointsDistributed: "—",
+      newUsers: "—",
+      recentUsers: [
+        {
+          displayName: "Sample User",
+          email: "user@example.com",
+          photoURL: "https://ui-avatars.com/api/?name=Sample+User&background=random&color=fff",
+          joinDate: firebase.firestore.Timestamp.fromDate(new Date()),
+          points: 100,
+          isVIP: false,
+          uid: "sample1"
+        },
+        {
+          displayName: "Admin User",
+          email: "admin@tournamenthub.com",
+          photoURL: "https://ui-avatars.com/api/?name=Admin+User&background=random&color=fff",
+          joinDate: firebase.firestore.Timestamp.fromDate(new Date()),
+          points: 1000,
+          isVIP: true,
+          isAdmin: true,
+          uid: "admin1"
+        }
+      ],
+      tournaments: [
+        {
+          name: "Weekend Warrior",
+          startDate: new Date(Date.now() + 2*24*60*60*1000),
+          entryFee: 50,
+          prizePool: 1000,
+          participants: 32,
+          maxParticipants: 64,
+          id: "sample-t1"
+        },
+        {
+          name: "BGMI Champions",
+          startDate: new Date(Date.now() + 5*24*60*60*1000),
+          entryFee: 100,
+          prizePool: 5000,
+          participants: 45,
+          maxParticipants: 100,
+          id: "sample-t2"
+        }
+      ]
+    };
   }
 
   function setupAdminPanelEvents() {

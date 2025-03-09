@@ -3076,13 +3076,28 @@ input:checked + .toggle-slider:before {
   right: 20px;
   display: flex;
   align-items: center;
-  background-color: rgba(0, 0, 0, 0.7);
+  background-color: rgba(0, 0, 0, 0.85);
   color: white;
-  padding: 10px 15px;
-  border-radius: 30px;
+  padding: 12px 18px;
+  border-radius: 50px;
   z-index: 9999;
-  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
   transition: opacity 0.5s ease, transform 0.5s ease;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .network-status.fade-out {
@@ -3097,42 +3112,221 @@ input:checked + .toggle-slider:before {
 }
 
 .network-status-icon {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 10px;
+  margin-right: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .network-status-icon.online {
   background-color: #4CAF50;
+  animation: pulseGreen 2s infinite;
 }
 
 .network-status-icon.offline {
   background-color: #F44336;
+  animation: pulseRed 2s infinite;
+}
+
+@keyframes pulseGreen {
+  0% {
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+  }
+}
+
+@keyframes pulseRed {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+  }
 }
 
 .network-status-text {
   font-weight: bold;
   font-size: 14px;
+  letter-spacing: 0.5px;
 }
 
 /* Offline notice for admin panel */
 .offline-notice {
   margin-bottom: 20px;
+  animation: fadeInUp 0.5s ease;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .quick-action-card.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  position: relative;
+}
+
+.quick-action-card.disabled::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* Alert styles with improved design */
+.alert {
+  padding: 1.25rem;
+  border-radius: 10px;
+  margin-bottom: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  animation: fadeIn 0.5s ease;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
 }
 
 .alert.warning {
   background-color: #FFF8E1;
   color: #FF8F00;
   border: 1px solid #FFCA28;
+}
+
+.alert.warning h3 {
+  color: #F57C00;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alert.warning h3 i {
+  color: #F57C00;
+  font-size: 1.5rem;
+}
+
+.alert.warning::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background-color: #FF8F00;
+}
+
+.alert p {
+  margin: 5px 0;
+  opacity: 0.9;
+}
+
+.alert.error {
+  background-color: #FFEBEE;
+  color: #D32F2F;
+  border: 1px solid #FFCDD2;
+}
+
+.alert.error::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background-color: #D32F2F;
+}
+
+.alert.error h3 {
+  color: #C62828;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alert.error h3 i {
+  color: #C62828;
+  font-size: 1.5rem;
+}
+
+.alert.info {
+  background-color: #E3F2FD;
+  color: #1976D2;
+  border: 1px solid #BBDEFB;
+}
+
+.alert.info::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background-color: #1976D2;
+}
+
+.alert.info h3 {
+  color: #1565C0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alert.info h3 i {
+  color: #1565C0;
+  font-size: 1.5rem;
+}
+
+.alert.success {
+  background-color: #E8F5E9;
+  color: #388E3C;
+  border: 1px solid #C8E6C9;
+}
+
+.alert.success::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background-color: #388E3C;
+}
+
+.alert.success h3 {
+  color: #2E7D32;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.alert.success h3 i {
+  color: #2E7D32;
+  font-size: 1.5rem;
 }
 
 /* Network status indicator styles */
