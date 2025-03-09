@@ -28,6 +28,31 @@
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+  
+  <!-- Connection monitoring script -->
+  <script>
+    // Simple connection monitor that runs before main script
+    window.connectionMonitor = {
+      status: navigator.onLine,
+      initialize: function() {
+        window.addEventListener('online', () => {
+          this.status = true;
+          console.log('Connection restored');
+        });
+        
+        window.addEventListener('offline', () => {
+          this.status = false;
+          console.log('Connection lost');
+        });
+        
+        console.log('Connection monitor initialized, status:', this.status ? 'online' : 'offline');
+      }
+    };
+    
+    // Initialize connection monitor
+    window.connectionMonitor.initialize();
+  </script>
+  
   <script src="script.js"></script>
 </body>
 </html>

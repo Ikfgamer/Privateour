@@ -8,8 +8,7 @@ window.addEventListener('unhandledrejection', function(event) {
   console.error('Unhandled promise rejection:', event.reason);
 });
 
-
-// Initialize Firebase first - before anything else
+// Firebase Configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBqDwc_TcqqBOICcM-djWShW250MsVQCvg",
   authDomain: "flowing-athlete-452807-k6.firebaseapp.com",
@@ -22,8 +21,11 @@ const firebaseConfig = {
 
 // Declare global variables
 let auth, db, storage;
-let dbConnectionRetries = 0;
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 5;
+let connectionStatus = true;
 
+// Initialize Firebase
 try {
   // Initialize Firebase globally so it's accessible everywhere
   if (!firebase.apps.length) {
@@ -36,58 +38,72 @@ try {
   db = firebase.firestore();
   storage = firebase.storage();
   
-  // Set cache config to prioritize online mode
+  // Configure Firestore for better performance
   db.settings({
-    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
     ignoreUndefinedProperties: true,
     merge: true
   });
   
-  // Always start with network mode first
+  // Ensure network is enabled
   db.enableNetwork()
     .then(() => {
       console.log("Firebase network enabled successfully");
-      dbConnectionStatus = true;
+      connectionStatus = true;
       
-      // Enable offline persistence as fallback - wrapped in a try block
-      try {
-        db.enablePersistence({
-          synchronizeTabs: true
-        }).catch(err => {
-          if (err.code === 'failed-precondition') {
-            console.log("Persistence failed: Multiple tabs open");
-          } else if (err.code === 'unimplemented') {
-            console.log("Persistence not supported by browser");
-          }
-        });
-      } catch (err) {
-        console.error("Error enabling persistence:", err);
-      }
-      
-      // Check connectivity immediately to confirm we can reach database
-      checkDatabaseConnectivity().then(isConnected => {
-        if (isConnected) {
-          console.log("Database is reachable, we're online");
-        } else {
-          console.log("Database unreachable despite network being enabled");
-          // Try again after a short delay
-          setTimeout(() => db.enableNetwork(), 2000);
-        }
+      // Verify database connection
+      return fetch('https://www.google.com/favicon.ico', { 
+        mode: 'no-cors',
+        cache: 'no-cache',
+        method: 'HEAD'
+      }).then(() => {
+        console.log("Internet connection verified");
+        return db.collection('users').limit(1).get();
+      }).then(() => {
+        console.log("Database connection verified");
+        connectionStatus = true;
+        connectionAttempts = 0;
       });
     })
     .catch(err => {
-      console.error("Error enabling network:", err);
-      dbConnectionStatus = false;
-      
-      // Try again after a short delay
-      setTimeout(() => db.enableNetwork(), 2000);
+      console.error("Error establishing connection:", err);
+      handleConnectionFailure();
     });
 } catch (err) {
   console.error("Firebase initialization error:", err);
-  dbConnectionStatus = false;
-  // Show error notification for users
   if (typeof showNotification === 'function') {
-    showNotification("Error connecting to database. Some features may not work.", "error");
+    showNotification("Error connecting to database. Please refresh the page.", "error");
+  }
+}
+
+// Connection failure handler
+function handleConnectionFailure() {
+  if (connectionAttempts < MAX_CONNECTION_ATTEMPTS) {
+    connectionAttempts++;
+    console.log(`Connection attempt ${connectionAttempts}/${MAX_CONNECTION_ATTEMPTS}`);
+    
+    // Exponential backoff for retries
+    const delay = Math.min(1000 * Math.pow(2, connectionAttempts), 10000);
+    
+    setTimeout(() => {
+      db.enableNetwork()
+        .then(() => {
+          console.log("Connection re-established");
+          connectionStatus = true;
+          connectionAttempts = 0;
+          
+          // Refresh data if user is logged in
+          if (auth.currentUser) {
+            loadUserData(auth.currentUser);
+          }
+        })
+        .catch(err => {
+          console.error("Retry failed:", err);
+          handleConnectionFailure();
+        });
+    }, delay);
+  } else {
+    console.error("Maximum connection attempts reached");
+    showNotification("Unable to connect to the server. Please check your internet connection and refresh the page.", "error");
   }
 }
 
@@ -96,135 +112,75 @@ document.addEventListener('DOMContentLoaded', function() {
   // Hide loading screen after everything is loaded
   const loadingScreen = document.getElementById('loading-screen');
   
-  // Network status tracking
-  let isOnline = navigator.onLine;
-  let networkStatusIndicator;
-  let dbConnectionStatus = true; // Assume connected to begin with
-  let connectivityCheckInterval = null;
+  // Enhanced connection monitoring
+  let networkStatusIndicator = null;
+  let connectionCheckInterval = null;
+  const CONNECTION_CHECK_INTERVAL = 30000; // Check every 30 seconds
   
-  // Set offline/online cache config for better offline experience
-  try {
-    // Enable offline persistence correctly
-    db.enablePersistence({
-      synchronizeTabs: true
-    }).catch(err => {
-      if (err.code === 'failed-precondition') {
-        // Multiple tabs open, persistence can only be enabled in one tab at a time
-        console.log("Persistence failed: Multiple tabs open");
-      } else if (err.code === 'unimplemented') {
-        // The current browser does not support persistence
-        console.log("Persistence not supported by browser");
-      }
-    });
-  } catch (err) {
-    console.error("Error setting Firestore persistence:", err);
-  }
-  
-  // Add network status indicator to the body
-  function createNetworkIndicator() {
-    if (!networkStatusIndicator) {
+  // Connection status indicator
+  function showConnectionStatus(status, message) {
+    // Remove any existing indicator
+    if (networkStatusIndicator) {
+      networkStatusIndicator.remove();
+    }
+    
+    // Only show indicator if there's a connection issue
+    if (status === 'error') {
       networkStatusIndicator = document.createElement('div');
       networkStatusIndicator.className = 'network-status';
       networkStatusIndicator.innerHTML = `
-        <div class="network-status-icon ${isOnline ? 'online' : 'offline'}">
-          <i class="fas ${isOnline ? 'fa-wifi' : 'fa-wifi-slash'}"></i>
+        <div class="network-status-icon ${status === 'success' ? 'online' : 'offline'}">
+          <i class="fas ${status === 'success' ? 'fa-wifi' : 'fa-exclamation-triangle'}"></i>
         </div>
-        <div class="network-status-text">${isOnline ? 'Online' : 'Offline Mode'}</div>
+        <div class="network-status-text">${message}</div>
       `;
       document.body.appendChild(networkStatusIndicator);
       
-      // Add fade out after 5 seconds
-      setTimeout(() => {
-        if (networkStatusIndicator) {
-          networkStatusIndicator.classList.add('fade-out');
-        }
-      }, 5000);
-    } else {
-      // Update existing indicator
-      const icon = networkStatusIndicator.querySelector('.network-status-icon');
-      const text = networkStatusIndicator.querySelector('.network-status-text');
+      // Add refresh button
+      const refreshButton = document.createElement('button');
+      refreshButton.className = 'btn btn-sm btn-light ml-2';
+      refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i>';
+      refreshButton.addEventListener('click', function() {
+        location.reload();
+      });
+      networkStatusIndicator.appendChild(refreshButton);
       
-      if (icon) {
-        icon.className = `network-status-icon ${isOnline ? 'online' : 'offline'}`;
-        icon.innerHTML = `<i class="fas ${isOnline ? 'fa-wifi' : 'fa-wifi-slash'}"></i>`;
-      }
-      
-      if (text) {
-        text.textContent = isOnline ? 'Online' : 'Offline Mode';
-      }
-      
-      // Show again
-      networkStatusIndicator.classList.remove('fade-out');
-      networkStatusIndicator.classList.add('fade-in');
-      
-      // Fade out after delay
-      setTimeout(() => {
-        if (networkStatusIndicator) {
-          networkStatusIndicator.classList.remove('fade-in');
-          networkStatusIndicator.classList.add('fade-out');
-        }
-      }, 5000);
+      // Keep visible until resolved
+    } else if (status === 'success' && message) {
+      showNotification(message, 'success');
     }
   }
   
-  // Function to check Firebase database connectivity
-  function checkDatabaseConnectivity() {
-    // If we're already offline according to navigator, don't bother checking
+  // Function to check connection and data access
+  function checkConnection() {
     if (!navigator.onLine) {
-      dbConnectionStatus = false;
+      showConnectionStatus('error', 'No internet connection. Please check your network.');
       return Promise.resolve(false);
     }
-
-    // Use fetch to check internet connectivity first (more reliable than navigator.onLine)
-    return fetch('https://www.google.com/favicon.ico', { 
-      mode: 'no-cors', // Just checking connection, don't need CORS
-      cache: 'no-cache', // Force fresh request
-      method: 'HEAD' // We just need headers, not the body
-    })
-    .then(response => {
-      // If we can reach Google, we probably have internet
-      // Now check Firebase connectivity
+    
+    return Promise.all([
+      // Check general internet connectivity
+      fetch('https://www.google.com/favicon.ico', { 
+        mode: 'no-cors',
+        cache: 'no-cache',
+        method: 'HEAD'
+      }),
       
-      // First make sure network is enabled
-      return db.enableNetwork()
-        .then(() => {
-          // Now try to get a small amount of data
-          return db.collection('users').limit(1).get();
-        })
-        .then(() => {
-          // Successfully got data, we're connected
-          if (!dbConnectionStatus) {
-            // If we were previously disconnected, notify the user
-            dbConnectionStatus = true;
-            showNotification('Database connection restored!', 'success');
-            
-            // Reload the current page to reflect online status
-            if (auth.currentUser) {
-              loadUserData(auth.currentUser);
-              reloadCurrentPage();
-            }
-          }
-          return true;
-        })
-        .catch(err => {
-          console.error("Firebase connectivity check failed:", err);
-          
-          // Don't immediately assume offline on first error
-          if (dbConnectionRetries < 3) {
-            dbConnectionRetries++;
-            console.log(`Retrying connection (attempt ${dbConnectionRetries})`);
-            return new Promise(resolve => setTimeout(() => 
-              resolve(checkDatabaseConnectivity()), 1500));
-          }
-          
-          dbConnectionStatus = false;
-          return false;
-        });
+      // Check Firebase connectivity
+      db.enableNetwork().then(() => db.collection('users').limit(1).get())
+    ])
+    .then(() => {
+      if (networkStatusIndicator) {
+        networkStatusIndicator.remove();
+        networkStatusIndicator = null;
+        showNotification('Connection established successfully', 'success');
+      }
+      connectionStatus = true;
+      return true;
     })
     .catch(err => {
-      // Can't even reach Google, definitely offline
-      console.error("Internet connectivity check failed:", err);
-      dbConnectionStatus = false;
+      console.error("Connection check failed:", err);
+      showConnectionStatus('error', 'Connection issues detected. Some features may be unavailable.');
       return false;
     });
   }
@@ -238,113 +194,46 @@ document.addEventListener('DOMContentLoaded', function() {
       if (page) {
         renderMainContent(page);
       } else {
-        // Default to home if no active page found
         renderMainContent('home');
       }
     } else {
-      // Default to home if no active link found
       renderMainContent('home');
     }
   }
   
   // Add event listeners for online/offline events
   window.addEventListener('online', function() {
-    isOnline = true;
-    createNetworkIndicator();
-    showNotification('Checking connection status...', 'info');
-    
-    // Clear any existing retry mechanism
-    dbConnectionRetries = 0;
-    
-    // Check database connectivity before reloading data
-    checkDatabaseConnectivity().then(isConnected => {
+    console.log("Browser reports online status");
+    checkConnection().then(isConnected => {
       if (isConnected) {
-        showNotification('You are back online! Syncing data...', 'success');
-        // Reload data if user is authenticated
-        if (firebase.auth().currentUser) {
-          loadUserData(firebase.auth().currentUser);
-          
-          // Reload the current page to reflect online status
-          reloadCurrentPage();
-        }
-      } else {
-        // Internet is back but database is still not accessible
-        showNotification('Internet connection detected, but database is still unavailable.', 'warning');
-      }
-    });
-  });
-  
-  window.addEventListener('offline', function() {
-    isOnline = false;
-    dbConnectionStatus = false;
-    createNetworkIndicator();
-    showNotification('You are offline. Limited functionality available.', 'warning');
-  });
-  
-  // Monitor Firebase connection state
-  db.enableNetwork().catch(err => {
-    console.log("Network enabling error:", err);
-  });
-  
-  // Function to periodically check connection status and force online mode if available
-  function checkAndForceOnlineMode() {
-    // Test connectivity with more than just navigator.onLine
-    fetch('https://www.google.com/favicon.ico', { 
-      mode: 'no-cors',
-      cache: 'no-cache', 
-      method: 'HEAD'
-    })
-    .then(() => {
-      // Internet is available, try to reconnect to Firebase
-      console.log('Internet appears to be available, attempting to reconnect');
-      dbConnectionRetries = 0;
-      
-      // Force enable network
-      return db.enableNetwork();
-    })
-    .then(() => {
-      console.log('Network force enabled');
-      dbConnectionStatus = true;
-      
-      return checkDatabaseConnectivity();
-    })
-    .then(isConnected => {
-      if (isConnected) {
-        console.log('Successfully reconnected to database');
-        // Reload current page content to use online mode
+        showNotification('Connection restored!', 'success');
         if (auth.currentUser) {
           loadUserData(auth.currentUser);
           reloadCurrentPage();
         }
       }
-    })
-    .catch(err => {
-      // Don't log error on expected network failures
-      if (err.name !== 'TypeError' && err.message !== 'Failed to fetch') {
-        console.error('Error forcing network mode:', err);
-      }
     });
+  });
+  
+  window.addEventListener('offline', function() {
+    console.log("Browser reports offline status");
+    showConnectionStatus('error', 'No internet connection. Please check your network.');
+  });
+  
+  // Set up connection monitoring interval
+  if (connectionCheckInterval) {
+    clearInterval(connectionCheckInterval);
   }
   
-  // Clear any existing interval
-  if (connectivityCheckInterval) {
-    clearInterval(connectivityCheckInterval);
-  }
-  
-  // Set up more frequent connectivity checks (every 10 seconds)
-  // Reduced frequency to avoid excessive requests
-  connectivityCheckInterval = setInterval(() => {
-    // Only check if we think we're offline or there was a previous connection issue
-    if (!dbConnectionStatus || !isOnline) {
-      checkAndForceOnlineMode();
-    } else {
-      // Periodic check to verify we're still online
-      checkDatabaseConnectivity();
+  // Less frequent checks to reduce unnecessary requests
+  connectionCheckInterval = setInterval(() => {
+    if (!connectionStatus) {
+      checkConnection();
     }
-  }, 10000);
+  }, CONNECTION_CHECK_INTERVAL);
   
-  // Show initial network status
-  createNetworkIndicator();
+  // Initial connection check
+  checkConnection();
 
   // Initialize the app UI
   initializeApp();
@@ -672,200 +561,88 @@ document.addEventListener('DOMContentLoaded', function() {
         adminPanelLink.classList.add('hidden');
       }
     }
-
-    // Check for cached data in localStorage
-    let cachedPoints = localStorage.getItem('userPoints');
     
-    // Set cached data for immediate display
+    // Show loading indicator for points
     if (userPointsDisplay) {
-      userPointsDisplay.textContent = cachedPoints || "100"; // Cached or default value
+      userPointsDisplay.textContent = "...";
+      userPointsDisplay.classList.add('loading');
     }
 
-    // First check if we're offline using multiple methods
-    let offlineStatus = !navigator.onLine;
-    
-    if (offlineStatus) {
-      console.log('Detected offline status via navigator.onLine, using cached user data');
-      handleOfflineUser(user, isAdmin);
-      return;
-    }
-
-    // Try to get and display user points with timeout for faster detection of offline state
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Request timed out')), 6000)
-    );
-    
-    // First try a simple fetch to check internet connection
-    fetch('https://www.google.com/favicon.ico', { 
-      mode: 'no-cors',
-      cache: 'no-cache', 
-      method: 'HEAD'
-    })
-    .then(() => {
-      // We have internet connection, now try to get Firebase data
-      const fetchDataPromise = db.collection('users').doc(user.uid).get();
-      
-      return Promise.race([fetchDataPromise, timeoutPromise]);
-    })
-    .then((doc) => {
-      if (doc.exists) {
-        const userData = doc.data();
-        
-        // Update points display with real data
-        if (userPointsDisplay) {
-          userPointsDisplay.textContent = userData.points || 0;
-          
-          // Cache the points in localStorage for offline mode
-          localStorage.setItem('userPoints', userData.points || 0);
-        }
-
-        // If this is an admin logging in, check and update admin status
-        if (isAdmin && !userData.isAdmin) {
-          try {
-            db.collection('users').doc(user.uid).update({
-              isAdmin: true
-            }).then(() => {
-              console.log('User updated with admin privileges');
-              showNotification('Admin privileges granted', 'success');
-            }).catch(err => {
-              console.log('Failed to update admin status, but continuing with admin privileges');
-            });
-          } catch (error) {
-            console.log('Failed to update admin status, but continuing with admin privileges');
+    // Load user data from database with retry mechanism
+    const loadUserDataWithRetry = (attempt = 1, maxAttempts = 3) => {
+      return db.collection('users').doc(user.uid).get()
+        .then((doc) => {
+          if (userPointsDisplay) {
+            userPointsDisplay.classList.remove('loading');
           }
-        }
-        
-        // After successful load, try to track daily login
-        try {
-          trackDailyLogin(user.uid);
-        } catch (err) {
-          console.log('Failed to track daily login, but continuing');
-        }
-      } else {
-        // User document doesn't exist, create one
-        console.log('User document not found, creating new one');
-        createUserDocument(user);
-      }
-      
-      // Clear any offline notifications or indicators since we're online
-      dbConnectionStatus = true;
-      isOnline = true;
-    })
-    .catch(err => {
-      console.error('Error loading user data:', err);
-      handleOfflineUser(user, isAdmin);
-    });
-  }
-  
-  // Handle user data when offline
-  function handleOfflineUser(user, isAdmin) {
-    const userPointsDisplay = document.getElementById('user-points-display');
-    const adminPanelLink = document.getElementById('admin-panel-link');
-    
-    // Create network indicator for offline mode
-    createNetworkIndicator();
-    
-    // Try to get data from IndexedDB first before showing offline notification
-    let hasLocalData = false;
-    
-    try {
-      // Try to access IndexedDB to see if we have cached data
-      const request = indexedDB.open('firebaseLocalStorageDb');
-      
-      request.onsuccess = function(event) {
-        hasLocalData = true;
-        // Show notification with better message
-        showNotification("You're currently in offline mode. Using cached data.", "info");
-      };
-      
-      request.onerror = function(event) {
-        console.error("IndexedDB error:", event);
-        // No local data available
-        showNotification("You're offline with no cached data. Some features may not work.", "warning");
-      };
-    } catch (err) {
-      console.error("Error checking local data:", err);
-      // Fall back to generic message
-      showNotification("You're currently offline. Limited functionality available.", "info");
-    }
-    
-    // Set default user data for offline mode
-    if (userPointsDisplay) {
-      // Try to get from localStorage as a fallback
-      const cachedPoints = localStorage.getItem('userPoints');
-      userPointsDisplay.textContent = cachedPoints || "100"; // Use cached or default points
-    }
-    
-    // Always enable admin panel for admin emails, even offline
-    if (isAdmin && adminPanelLink) {
-      adminPanelLink.classList.remove('hidden');
-      
-      // Remove any existing click listeners to prevent duplicates
-      const newAdminPanelLink = adminPanelLink.cloneNode(true);
-      adminPanelLink.parentNode.replaceChild(newAdminPanelLink, adminPanelLink);
-      
-      // Add click event listener for admin panel
-      newAdminPanelLink.addEventListener('click', function(e) {
-        e.preventDefault();
-        renderAdminPanel();
-      });
-    }
-    
-    // Add manual refresh button to allow the user to retry connection
-    const refreshButton = document.createElement('button');
-    refreshButton.className = 'btn btn-primary retry-connection-btn';
-    refreshButton.innerHTML = '<i class="fas fa-sync-alt"></i> Retry Connection';
-    refreshButton.style.position = 'fixed';
-    refreshButton.style.bottom = '20px';
-    refreshButton.style.right = '20px';
-    refreshButton.style.zIndex = '999';
-    
-    refreshButton.addEventListener('click', function() {
-      showNotification("Attempting to reconnect...", "info");
-      dbConnectionRetries = 0; // Reset retry counter
-      checkDatabaseConnectivity().then(isConnected => {
-        if (isConnected) {
-          showNotification("Connection restored!", "success");
-          // Remove this button
-          document.body.removeChild(refreshButton);
-          // Reload user data
-          loadUserData(user);
-        } else {
-          showNotification("Still offline. Please try again later.", "warning");
-        }
-      });
-    });
-    
-    document.body.appendChild(refreshButton);
-    
-    // Set up listener to reload data when connection is restored
-    window.addEventListener('online', function onlineHandler() {
-      console.log('Back online, reloading user data');
-      window.removeEventListener('online', onlineHandler); // Remove to prevent duplicate calls
-      
-      // Longer delay to ensure network is stable and Firebase connection is established
-      setTimeout(() => {
-        if (navigator.onLine) {
-          // Reset retries and check connection
-          dbConnectionRetries = 0;
-          checkDatabaseConnectivity().then(isConnected => {
-            if (isConnected) {
-              // Try to remove the refresh button if it exists
-              try {
-                const refreshBtn = document.querySelector('.retry-connection-btn');
-                if (refreshBtn) {
-                  document.body.removeChild(refreshBtn);
-                }
-              } catch (err) {
-                console.log("Error removing refresh button:", err);
-              }
-              
-              loadUserData(user);
+          
+          if (doc.exists) {
+            const userData = doc.data();
+            
+            // Update points display with real data
+            if (userPointsDisplay) {
+              userPointsDisplay.textContent = userData.points || 0;
+              // Store for quick reference
+              localStorage.setItem('userPoints', userData.points || 0);
             }
-          });
-        }
-      }, 2000);
-    });
+
+            // If this is an admin logging in, ensure admin status is set
+            if (isAdmin && !userData.isAdmin) {
+              db.collection('users').doc(user.uid).update({
+                isAdmin: true
+              }).then(() => {
+                console.log('User updated with admin privileges');
+              }).catch(err => {
+                console.log('Admin status update failed, but proceeding with admin privileges');
+              });
+            }
+            
+            // Record daily login
+            trackDailyLogin(user.uid);
+            
+            return userData;
+          } else {
+            // User document doesn't exist, create one
+            console.log('User document not found, creating new one');
+            return createUserDocument(user).then(() => {
+              if (userPointsDisplay) {
+                userPointsDisplay.textContent = "100"; // Default starting points
+              }
+              return { points: 100 };
+            });
+          }
+        })
+        .catch(err => {
+          console.error(`Error loading user data (attempt ${attempt}/${maxAttempts}):`, err);
+          
+          if (attempt < maxAttempts) {
+            // Exponential backoff for retries
+            const retryDelay = Math.min(1000 * Math.pow(2, attempt), 8000);
+            console.log(`Retrying in ${retryDelay}ms...`);
+            
+            return new Promise(resolve => {
+              setTimeout(() => {
+                resolve(loadUserDataWithRetry(attempt + 1, maxAttempts));
+              }, retryDelay);
+            });
+          } else {
+            // All retries failed
+            if (userPointsDisplay) {
+              userPointsDisplay.classList.remove('loading');
+              
+              // Try to use cached value from localStorage if available
+              const cachedPoints = localStorage.getItem('userPoints');
+              userPointsDisplay.textContent = cachedPoints || "0";
+            }
+            
+            showNotification("Error loading your profile data. Please refresh the page.", "error");
+            throw err;
+          }
+        });
+    };
+
+    // Start loading user data with retry mechanism
+    loadUserDataWithRetry();
   }
 
   function trackDailyLogin(userId) {
