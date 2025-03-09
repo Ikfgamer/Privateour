@@ -2374,6 +2374,68 @@ border-radius: 8px;
   text-align: center;
 }
 
+/* Improved Reconnect Prompt */
+.reconnect-prompt {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.7);
+  z-index: 9999;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  backdrop-filter: blur(5px);
+  animation: fadeIn 0.3s ease;
+}
+
+.reconnect-content {
+  background-color: white;
+  padding: 2rem;
+  border-radius: 12px;
+  max-width: 450px;
+  text-align: center;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.reconnect-content h3 {
+  color: var(--primary-color);
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.reconnect-content h3 i {
+  color: var(--error-color);
+}
+
+.reconnect-content p {
+  margin-bottom: 1.5rem;
+  color: var(--text-secondary);
+}
+
+.reconnect-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
+  }
+}
+
+
 .admin-content {
   padding: 2rem;
   overflow-y: auto;

@@ -45,17 +45,60 @@ try {
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
   });
   
+  // Configure Firestore for better performance and offline capabilities
+  db.settings({
+    ignoreUndefinedProperties: true,
+    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+  });
+
   // Enable offline persistence to handle intermittent connectivity
   db.enablePersistence({ synchronizeTabs: true })
+    .then(() => {
+      console.log("Firestore persistence enabled successfully");
+      
+      // After enabling persistence, ensure we're also enabling network
+      return db.enableNetwork();
+    })
+    .then(() => {
+      console.log("Firestore network enabled");
+      // Setup a listener to detect when Firestore data is in sync
+      db.waitForPendingWrites().then(() => {
+        console.log("All pending writes completed");
+      });
+    })
     .catch(err => {
       if (err.code === 'failed-precondition') {
         // Multiple tabs open, persistence can only be enabled in one tab
         console.warn("Persistence failed: Multiple tabs open");
+        showNotification("Multiple tabs detected. Offline mode may be limited.", "info");
       } else if (err.code === 'unimplemented') {
         // Browser doesn't support persistence
         console.warn("Persistence not supported by this browser");
+        showNotification("Your browser doesn't support offline mode. Some features may be limited.", "info");
+      } else {
+        console.error("Error enabling persistence:", err);
       }
+      
+      // Even if persistence fails, make sure network is enabled
+      db.enableNetwork().catch(e => console.error("Could not enable network:", e));
     });
+    
+  // Set up better network state monitoring
+  const connectedRef = firebase.database().ref(".info/connected");
+  connectedRef.on("value", (snap) => {
+    if (snap.val() === true) {
+      console.log("Firebase connected");
+      connectionStatus = true;
+      // Hide any offline notifications
+      const networkStatus = document.querySelector('.network-status');
+      if (networkStatus) {
+        networkStatus.remove();
+      }
+    } else {
+      console.log("Firebase disconnected");
+      connectionStatus = false;
+    }
+  });
   
   // Create function to verify connectivity with retry logic
   function verifyFirebaseConnectivity(retryCount = 0, maxRetries = 3) {
@@ -4142,27 +4185,82 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Function to manually reset connection state and clear caches
 function resetConnectionState() {
-  // Reset connection status variables
-  dbConnectionRetries = 0;
-  dbConnectionStatus = true;
-  isOnline = navigator.onLine;
+  showNotification("Reconnecting...", "info");
   
-  // Clear any existing intervals
-  if (connectivityCheckInterval) {
-    clearInterval(connectivityCheckInterval);
+  // Show loading indicator on reconnect button if it exists
+  const reconnectButton = document.getElementById('manual-reconnect');
+  if (reconnectButton) {
+    reconnectButton.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Reconnecting...';
+    reconnectButton.disabled = true;
   }
   
-  // Forcefully enable network for Firestore
-  db.enableNetwork()
+  // Reset connection status variables
+  connectionAttempts = 0;
+  connectionStatus = navigator.onLine;
+  
+  // Clear any existing intervals
+  if (window.connectivityCheckInterval) {
+    clearInterval(window.connectivityCheckInterval);
+  }
+  
+  // Multi-step recovery process:
+  
+  // 1. First, clear any Firebase cache that might be corrupted
+  const clearCachePromise = new Promise((resolve) => {
+    // This is a workaround to force cache refresh
+    try {
+      const cacheNames = ['firebaseLocalStorageDb', 'firestore'];
+      if (window.indexedDB) {
+        cacheNames.forEach(cacheName => {
+          try {
+            indexedDB.deleteDatabase(cacheName);
+            console.log(`Attempted to clear cache: ${cacheName}`);
+          } catch (e) {
+            console.log(`Could not clear cache: ${cacheName}`, e);
+          }
+        });
+      }
+    } catch (e) {
+      console.error("Error clearing caches:", e);
+    }
+    // Always resolve, even if cache clearing fails
+    resolve();
+  });
+  
+  // 2. Reset network connection
+  clearCachePromise
     .then(() => {
-      console.log("Firebase network forcefully enabled");
+      // Disable network first to ensure clean state
+      return db.disableNetwork()
+        .catch(err => {
+          console.log("Error disabling network (may be already disabled):", err);
+          // Continue anyway
+          return Promise.resolve();
+        });
+    })
+    .then(() => {
+      // Wait a moment before re-enabling
+      return new Promise(resolve => setTimeout(resolve, 1000));
+    })
+    .then(() => {
+      // Re-enable network
+      return db.enableNetwork();
+    })
+    .then(() => {
+      console.log("Firebase network forcefully reset");
       
       // Refresh connection check
       return checkDatabaseConnectivity();
     })
     .then(isConnected => {
+      // Reset reconnect button if it exists
+      if (reconnectButton) {
+        reconnectButton.innerHTML = '<i class="fas fa-sync-alt"></i> Reconnect';
+        reconnectButton.disabled = false;
+      }
+      
       if (isConnected) {
-        showNotification("Connection successfully reset!", "success");
+        showNotification("Connection successfully restored!", "success");
         
         // Reload data if user is logged in
         if (auth.currentUser) {
@@ -4170,26 +4268,55 @@ function resetConnectionState() {
           reloadCurrentPage();
         }
       } else {
-        showNotification("Connection reset attempted, but still offline", "warning");
+        showNotification("Still having connection issues. Try refreshing the page.", "warning");
       }
       
       // Restart connectivity check interval
-      connectivityCheckInterval = setInterval(() => {
-        if (!dbConnectionStatus || !isOnline) {
-          checkAndForceOnlineMode();
-        } else {
+      window.connectivityCheckInterval = setInterval(() => {
+        if (navigator.onLine && !connectionStatus) {
           checkDatabaseConnectivity();
         }
-      }, 10000);
+      }, 30000); // Check less frequently to reduce resource usage
     })
     .catch(err => {
       console.error("Error resetting connection:", err);
-      showNotification("Failed to reset connection. Please try again.", "error");
+      showNotification("Failed to reset connection. Please refresh the page.", "error");
+      
+      // Reset reconnect button if it exists
+      if (reconnectButton) {
+        reconnectButton.innerHTML = '<i class="fas fa-sync-alt"></i> Reconnect';
+        reconnectButton.disabled = false;
+      }
     });
 }
 
 // Add a global function that can be called from console for debugging
 window.resetConnection = resetConnectionState;
+
+// Function to force cache refresh and reload
+function forceRefresh() {
+  if ('caches' in window) {
+    caches.keys().then(names => {
+      names.forEach(name => {
+        caches.delete(name);
+      });
+    });
+  }
+  
+  // Clear application cache
+  if (window.applicationCache) {
+    window.applicationCache.swapCache();
+  }
+  
+  // Clear session storage
+  window.sessionStorage.clear();
+  
+  // Reload the page with cache bypass
+  window.location.reload(true);
+}
+
+// Add to window for console debugging
+window.forceRefresh = forceRefresh;
 
 
     // Create a new auth modal with proper display style
@@ -4835,16 +4962,21 @@ function showReconnectPrompt() {
     existingPrompt.remove();
   }
   
-  // Create reconnect prompt
+  // Create reconnect prompt with improved UI
   const reconnectPrompt = document.createElement('div');
   reconnectPrompt.className = 'reconnect-prompt';
   reconnectPrompt.innerHTML = `
     <div class="reconnect-content">
       <h3><i class="fas fa-wifi-slash"></i> Connection Issue</h3>
-      <p>Having trouble connecting to the server. This may affect some features.</p>
-      <button id="manual-reconnect" class="btn btn-primary">
-        <i class="fas fa-sync-alt"></i> Reconnect
-      </button>
+      <p>You're currently offline. Using cached data. Some features may be limited.</p>
+      <div class="reconnect-actions">
+        <button id="manual-reconnect" class="btn btn-primary">
+          <i class="fas fa-sync-alt"></i> Reconnect
+        </button>
+        <button id="continue-offline" class="btn btn-secondary">
+          Continue in Offline Mode
+        </button>
+      </div>
     </div>
   `;
   
@@ -4858,37 +4990,113 @@ function showReconnectPrompt() {
     // Reset connection and force reconnect
     resetConnectionState();
   });
+  
+  // Add event listener to continue offline button
+  document.getElementById('continue-offline').addEventListener('click', function() {
+    // Hide the prompt
+    reconnectPrompt.remove();
+    
+    // Show a persistent offline indicator instead
+    showConnectionStatus('error', 'Offline Mode - Using cached data');
+    
+    // Set up a check to automatically reconnect when online
+    window.addEventListener('online', function onlineHandler() {
+      // Try to reconnect automatically when back online
+      resetConnectionState();
+      // Remove this event listener to avoid duplicates
+      window.removeEventListener('online', onlineHandler);
+    });
+  });
 }
 
 // Function to check database connectivity and recover if possible
 function checkDatabaseConnectivity() {
   if (!db) return Promise.resolve(false);
   
-  return db.enableNetwork()
+  // Set a maximum timeout for the connectivity check
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Connection check timed out')), 8000);
+  });
+  
+  const connectivityPromise = db.enableNetwork()
     .then(() => {
-      return fetch('https://www.google.com/favicon.ico', { 
-        mode: 'no-cors',
-        cache: 'no-cache',
-        method: 'HEAD',
-        timeout: 5000
-      })
+      // First check basic internet connectivity with multiple fallbacks
+      return Promise.any([
+        fetch('https://www.google.com/favicon.ico', { 
+          mode: 'no-cors',
+          cache: 'no-cache',
+          method: 'HEAD'
+        }),
+        fetch('https://www.cloudflare.com/favicon.ico', { 
+          mode: 'no-cors',
+          cache: 'no-cache',
+          method: 'HEAD'
+        }),
+        fetch('https://www.microsoft.com/favicon.ico', { 
+          mode: 'no-cors',
+          cache: 'no-cache',
+          method: 'HEAD'
+        })
+      ])
       .then(() => {
+        console.log("Internet connection available");
+        // Now check Firebase connectivity
         return db.collection('users').limit(1).get()
           .then(() => {
+            console.log("Firebase connection successful");
             // Connection successful - remove any reconnect prompt
             const existingPrompt = document.querySelector('.reconnect-prompt');
             if (existingPrompt) {
               existingPrompt.remove();
             }
+            
+            // Update connection status UI if visible
+            updateConnectionStatusUI(true);
+            
+            // Set global connection state
+            connectionStatus = true;
             return true;
           });
       });
     })
     .catch(err => {
       console.error("Connectivity check failed:", err);
-      showReconnectPrompt();
+      
+      // Only show reconnect prompt if we're really offline
+      if (!navigator.onLine) {
+        showReconnectPrompt();
+        updateConnectionStatusUI(false);
+      } else {
+        // We might be online but have a firebase-specific issue
+        console.log("Browser reports online but Firebase connection failed");
+      }
+      
       return false;
     });
+    
+  // Race against timeout
+  return Promise.race([connectivityPromise, timeoutPromise])
+    .catch(err => {
+      console.error("Connection check failed or timed out:", err);
+      return false;
+    });
+}
+
+// Function to update connection status UI
+function updateConnectionStatusUI(isConnected) {
+  // Remove any existing offline indicator
+  const existingIndicator = document.querySelector('.network-status');
+  if (existingIndicator) {
+    if (isConnected) {
+      existingIndicator.remove();
+    }
+    return; // Already showing the right status
+  }
+  
+  // If we're disconnected, show the status
+  if (!isConnected) {
+    showConnectionStatus('error', 'You\'re currently offline. Using cached data.');
+  }
 }
 
 // Function to force app back to online mode
