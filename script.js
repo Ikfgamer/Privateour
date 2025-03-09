@@ -20,11 +20,38 @@ const firebaseConfig = {
   measurementId: "G-M65H20B0V5"
 };
 
-// Initialize Firebase globally so it's accessible everywhere
-firebase.initializeApp(firebaseConfig);
-const auth = firebase.auth();
-const db = firebase.firestore();
-const storage = firebase.storage();
+// Declare global variables
+let auth, db, storage;
+
+try {
+  // Initialize Firebase globally so it's accessible everywhere
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  } else {
+    firebase.app(); // If already initialized, use that one
+  }
+  
+  auth = firebase.auth();
+  db = firebase.firestore();
+  storage = firebase.storage();
+  
+  // Set offline/online cache config for better offline experience
+  // Use the recommended approach with merge: true to avoid host override warnings
+  db.settings({
+    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+    ignoreUndefinedProperties: true,
+    merge: true,
+    cache: {
+      synchronizeTabs: true
+    }
+  });
+} catch (err) {
+  console.error("Firebase initialization error:", err);
+  // Show error notification for users
+  if (typeof showNotification === 'function') {
+    showNotification("Error connecting to database. Some features may not work.", "error");
+  }
+}
 
 // Firebase Configuration and Initialization
 document.addEventListener('DOMContentLoaded', function() {
@@ -38,14 +65,18 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Set offline/online cache config for better offline experience
   // Use the recommended approach instead of enablePersistence
-  db.settings({
-    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-    ignoreUndefinedProperties: true,
-    merge: true,
-    cache: {
-      synchronizeTabs: true
-    }
-  });
+  try {
+    db.settings({
+      cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
+      ignoreUndefinedProperties: true,
+      merge: true,
+      cache: {
+        synchronizeTabs: true
+      }
+    });
+  } catch (err) {
+    console.error("Error setting Firestore settings:", err);
+  }
   
   // Add network status indicator to the body
   function createNetworkIndicator() {
@@ -1797,7 +1828,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add active class to clicked channel
 
   // Function to render admin panel in offline mode
-  function renderOfflineAdminPanel(user) {
+  window.renderOfflineAdminPanel = function(user) {
     const mainContent = document.getElementById('main-content');
     
     // Use default data for offline mode
@@ -2569,27 +2600,153 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     `;
 
-    // Check if current user is admin
-    const user = auth.currentUser;
-    if (!user) {
-      showNotification("Please sign in to access the admin panel", "error");
-      renderAuthContent();
-      return;
-    }
+    try {
+      // Check if current user is admin
+      const user = auth.currentUser;
+      if (!user) {
+        showNotification("Please sign in to access the admin panel", "error");
+        renderAuthContent();
+        return;
+      }
 
-    // Set isAdmin if email matches criteria - this ensures admin access even when offline
-    const isAdmin = user.email && (
-      user.email === 'Jitenadminpanelaccess@gmail.com' || 
-      user.email === 'karateboyjitenderprajapat@gmail.com' || 
-      user.email.endsWith('@admin.tournamenthub.com')
-    );
+      // Set isAdmin if email matches criteria - this ensures admin access even when offline
+      const isAdmin = user.email && (
+        user.email === 'Jitenadminpanelaccess@gmail.com' || 
+        user.email === 'karateboyjitenderprajapat@gmail.com' || 
+        user.email.endsWith('@admin.tournamenthub.com')
+      );
 
-    if (!isAdmin) {
+      if (!isAdmin) {
+        mainContent.innerHTML = `
+          <div class="container">
+            <div class="alert error">
+              <h3><i class="fas fa-exclamation-triangle"></i> Access Denied</h3>
+              <p>You do not have permission to access the admin panel.</p>
+              <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+            </div>
+          </div>
+        `;
+        document.getElementById('back-to-home').addEventListener('click', () => {
+          renderMainContent('home');
+        });
+        return;
+      }
+
+      // Check if we're offline immediately to speed up load time when no internet
+      if (!navigator.onLine) {
+        console.log('Detected offline status, using offline admin panel');
+        window.renderOfflineAdminPanel(user);
+        return;
+      }
+      
+      // Set timeout for faster offline detection
+      const timeoutId = setTimeout(() => {
+        console.log('Request timed out, showing offline admin panel');
+        window.renderOfflineAdminPanel(user);
+      }, 3000);
+
+      // Make sure db is defined before using it
+      if (!db) {
+        console.error("Firestore database is not initialized");
+        clearTimeout(timeoutId);
+        window.renderOfflineAdminPanel(user);
+        return;
+      }
+
+      // Try to get minimal user data with a simple existence check to verify connectivity
+      db.collection('users').doc(user.uid).get()
+        .then((doc) => {
+          // Clear timeout since we got a response
+          clearTimeout(timeoutId);
+          
+          // Assume admin status if email matches criteria - this is important for when a user's
+          // admin status hasn't been saved to the db yet but their email is an admin email
+          const isAdminUser = isAdmin || (doc.exists && doc.data() && doc.data().isAdmin);
+          
+          if (isAdminUser) {
+            // If we've confirmed the user, set admin flag in db if not already set
+            if (doc.exists && doc.data() && !doc.data().isAdmin && isAdmin) {
+              try {
+                db.collection('users').doc(user.uid).update({
+                  isAdmin: true
+                }).catch(err => {
+                  console.log('Failed to update admin status, but continuing with admin privileges:', err);
+                });
+              } catch (err) {
+                // Non-critical error, can continue
+                console.log('Failed to update admin status, but continuing with admin privileges:', err);
+              }
+            }
+
+            // Load stats for dashboard
+            loadAdminStats()
+              .then(stats => {
+                // Successfully loaded, now render the admin panel with real stats
+                renderAdminDashboard(user, doc.exists && doc.data() ? doc.data() : { displayName: user.displayName || user.email.split('@')[0] }, stats);
+              })
+              .catch(err => {
+                console.error("Error loading admin stats:", err);
+                // If we can't load stats but we know user is admin, still show admin panel with default data
+                renderAdminDashboard(user, doc.exists && doc.data() ? doc.data() : { displayName: user.displayName || user.email.split('@')[0] }, {
+                  totalUsers: "-",
+                  activeTournaments: "-",
+                  pointsDistributed: "-",
+                  newUsers: "-",
+                  recentUsers: [],
+                  tournaments: []
+                });
+              });
+          } else {
+            // Not an admin
+            mainContent.innerHTML = `
+              <div class="container">
+                <div class="alert error">
+                  <h3><i class="fas fa-exclamation-triangle"></i> Access Denied</h3>
+                  <p>You do not have permission to access the admin panel.</p>
+                  <p>Please contact the site administrator if you believe this is an error.</p>
+                  <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+                </div>
+              </div>
+            `;
+
+            document.getElementById('back-to-home').addEventListener('click', () => {
+              renderMainContent('home');
+            });
+          }
+        })
+        .catch(err => {
+          // Clear timeout since we got a response (even if it's an error)
+          clearTimeout(timeoutId);
+          
+          console.error("Error checking admin status:", err);
+          
+          // If we encounter an error but know the user should be admin based on email, still show admin panel
+          if (isAdmin) {
+            console.log("Showing offline admin panel due to database error");
+            window.renderOfflineAdminPanel(user);
+          } else {
+            mainContent.innerHTML = `
+              <div class="container">
+                <div class="alert error">
+                  <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
+                  <p>There was an error loading the admin panel. Please try again later.</p>
+                  <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+                </div>
+              </div>
+            `;
+
+            document.getElementById('back-to-home').addEventListener('click', () => {
+              renderMainContent('home');
+            });
+          }
+        });
+    } catch (error) {
+      console.error("Error in renderAdminPanel:", error);
       mainContent.innerHTML = `
         <div class="container">
           <div class="alert error">
-            <h3><i class="fas fa-exclamation-triangle"></i> Access Denied</h3>
-            <p>You do not have permission to access the admin panel.</p>
+            <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
+            <p>An unexpected error occurred. Please try again later.</p>
             <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
           </div>
         </div>
@@ -2597,107 +2754,7 @@ document.addEventListener('DOMContentLoaded', function() {
       document.getElementById('back-to-home').addEventListener('click', () => {
         renderMainContent('home');
       });
-      return;
     }
-
-    // Check if we're offline immediately to speed up load time when no internet
-    if (!navigator.onLine) {
-      console.log('Detected offline status, using offline admin panel');
-      renderOfflineAdminPanel(user);
-      return;
-    }
-    
-    // Set timeout for faster offline detection
-    const timeoutId = setTimeout(() => {
-      console.log('Request timed out, showing offline admin panel');
-      renderOfflineAdminPanel(user);
-    }, 3000);
-
-    // Try to get minimal user data with a simple existence check to verify connectivity
-    db.collection('users').doc(user.uid).get()
-      .then((doc) => {
-        // Clear timeout since we got a response
-        clearTimeout(timeoutId);
-        
-        // Assume admin status if email matches criteria - this is important for when a user's
-        // admin status hasn't been saved to the db yet but their email is an admin email
-        const isAdminUser = isAdmin || (doc.exists && doc.data().isAdmin);
-        
-        if (isAdminUser) {
-          // If we've confirmed the user, set admin flag in db if not already set
-          if (doc.exists && !doc.data().isAdmin && isAdmin) {
-            try {
-              db.collection('users').doc(user.uid).update({
-                isAdmin: true
-              });
-            } catch (err) {
-              // Non-critical error, can continue
-              console.log('Failed to update admin status, but continuing with admin privileges');
-            }
-          }
-
-          // Load stats for dashboard
-          loadAdminStats()
-            .then(stats => {
-              // Successfully loaded, now render the admin panel with real stats
-              renderAdminDashboard(user, doc.exists ? doc.data() : { displayName: user.displayName || user.email.split('@')[0] }, stats);
-            })
-            .catch(err => {
-              console.error("Error loading admin stats:", err);
-              // If we can't load stats but we know user is admin, still show admin panel with default data
-              renderAdminDashboard(user, doc.exists ? doc.data() : { displayName: user.displayName || user.email.split('@')[0] }, {
-                totalUsers: "-",
-                activeTournaments: "-",
-                pointsDistributed: "-",
-                newUsers: "-",
-                recentUsers: [],
-                tournaments: []
-              });
-            });
-        } else {
-          // Not an admin
-          mainContent.innerHTML = `
-            <div class="container">
-              <div class="alert error">
-                <h3><i class="fas fa-exclamation-triangle"></i> Access Denied</h3>
-                <p>You do not have permission to access the admin panel.</p>
-                <p>Please contact the site administrator if you believe this is an error.</p>
-                <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
-              </div>
-            </div>
-          `;
-
-          document.getElementById('back-to-home').addEventListener('click', () => {
-            renderMainContent('home');
-          });
-        }
-      })
-      .catch(err => {
-        // Clear timeout since we got a response (even if it's an error)
-        clearTimeout(timeoutId);
-        
-        console.error("Error checking admin status:", err);
-        
-        // If we encounter an error but know the user should be admin based on email, still show admin panel
-        if (isAdmin) {
-          console.log("Showing offline admin panel due to database error");
-          renderOfflineAdminPanel(user);
-        } else {
-          mainContent.innerHTML = `
-            <div class="container">
-              <div class="alert error">
-                <h3><i class="fas fa-exclamation-triangle"></i> Error</h3>
-                <p>There was an error loading the admin panel. Please try again later.</p>
-                <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
-              </div>
-            </div>
-          `;
-
-          document.getElementById('back-to-home').addEventListener('click', () => {
-            renderMainContent('home');
-          });
-        }
-      });
   }
   
   // Function to render the admin dashboard with data
@@ -3120,60 +3177,17 @@ document.addEventListener('DOMContentLoaded', function() {
         tournaments: []
       };
 
+      // Check if db is defined
+      if (!db || !firebase) {
+        console.log('Firebase not initialized - using default stats');
+        resolve(getSampleStats());
+        return;
+      }
+
       // Check if we're offline immediately
       if (!navigator.onLine) {
         console.log('Offline mode - using default stats');
-        // Use sample data for offline mode
-        stats.totalUsers = "—";
-        stats.activeTournaments = "—";
-        stats.pointsDistributed = "—";
-        stats.newUsers = "—";
-        
-        // Create sample data for better UI experience
-        stats.recentUsers = [
-          {
-            displayName: "Sample User",
-            email: "user@example.com",
-            photoURL: "https://ui-avatars.com/api/?name=Sample+User&background=random&color=fff",
-            joinDate: firebase.firestore.Timestamp.fromDate(new Date()),
-            points: 100,
-            isVIP: false,
-            uid: "sample1"
-          },
-          {
-            displayName: "Admin User",
-            email: "admin@tournamenthub.com",
-            photoURL: "https://ui-avatars.com/api/?name=Admin+User&background=random&color=fff",
-            joinDate: firebase.firestore.Timestamp.fromDate(new Date()),
-            points: 1000,
-            isVIP: true,
-            isAdmin: true,
-            uid: "admin1"
-          }
-        ];
-        
-        stats.tournaments = [
-          {
-            name: "Weekend Warrior",
-            startDate: new Date(Date.now() + 2*24*60*60*1000),
-            entryFee: 50,
-            prizePool: 1000,
-            participants: 32,
-            maxParticipants: 64,
-            id: "sample-t1"
-          },
-          {
-            name: "BGMI Champions",
-            startDate: new Date(Date.now() + 5*24*60*60*1000),
-            entryFee: 100,
-            prizePool: 5000,
-            participants: 45,
-            maxParticipants: 100,
-            id: "sample-t2"
-          }
-        ];
-        
-        resolve(stats);
+        resolve(getSampleStats());
         return;
       }
 
@@ -3183,17 +3197,22 @@ document.addEventListener('DOMContentLoaded', function() {
       });
       
       const fetchDataPromise = new Promise((dataResolve) => {
-        // First check if we can at least access the database
-        db.collection('users').limit(1).get()
-          .then(() => {
-            // If we can access the database, proceed with the full data fetch
-            fetchFullAdminStats(stats, dataResolve);
-          })
-          .catch(error => {
-            console.error("Error accessing database:", error);
-            // Network error, use default stats
-            dataResolve(getSampleStats());
-          });
+        try {
+          // First check if we can at least access the database
+          db.collection('users').limit(1).get()
+            .then(() => {
+              // If we can access the database, proceed with the full data fetch
+              fetchFullAdminStats(stats, dataResolve);
+            })
+            .catch(error => {
+              console.error("Error accessing database:", error);
+              // Network error, use default stats
+              dataResolve(getSampleStats());
+            });
+        } catch (error) {
+          console.error("Error while trying to access database:", error);
+          dataResolve(getSampleStats());
+        }
       });
       
       // Race the data fetch against the timeout
