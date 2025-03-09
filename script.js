@@ -25,7 +25,7 @@ let connectionAttempts = 0;
 const MAX_CONNECTION_ATTEMPTS = 5;
 let connectionStatus = true;
 
-// Initialize Firebase
+// Initialize Firebase with improved error handling and connectivity
 try {
   // Initialize Firebase globally so it's accessible everywhere
   if (!firebase.apps.length) {
@@ -38,35 +38,100 @@ try {
   db = firebase.firestore();
   storage = firebase.storage();
   
-  // Configure Firestore for better performance
+  // Configure Firestore for better performance and offline capabilities
   db.settings({
     ignoreUndefinedProperties: true,
-    merge: true
+    merge: true,
+    cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
   });
   
+  // Enable offline persistence to handle intermittent connectivity
+  db.enablePersistence({ synchronizeTabs: true })
+    .catch(err => {
+      if (err.code === 'failed-precondition') {
+        // Multiple tabs open, persistence can only be enabled in one tab
+        console.warn("Persistence failed: Multiple tabs open");
+      } else if (err.code === 'unimplemented') {
+        // Browser doesn't support persistence
+        console.warn("Persistence not supported by this browser");
+      }
+    });
+  
+  // Create function to verify connectivity with retry logic
+  function verifyFirebaseConnectivity(retryCount = 0, maxRetries = 3) {
+    console.log(`Verifying Firebase connectivity (attempt ${retryCount + 1}/${maxRetries + 1})...`);
+    
+    return new Promise((resolve, reject) => {
+      // Set a timeout for the operation
+      const timeoutId = setTimeout(() => {
+        reject(new Error("Connection verification timed out"));
+      }, 5000);
+      
+      // First check internet connectivity
+      fetch('https://www.google.com/favicon.ico', { 
+        mode: 'no-cors',
+        cache: 'no-cache',
+        method: 'HEAD'
+      })
+      .then(() => {
+        console.log("Internet connection verified");
+        
+        // Then try a lightweight Firestore operation
+        return db.collection('users').limit(1).get();
+      })
+      .then(() => {
+        clearTimeout(timeoutId);
+        console.log("Firebase connection verified successfully");
+        connectionStatus = true;
+        connectionAttempts = 0;
+        resolve(true);
+      })
+      .catch(error => {
+        clearTimeout(timeoutId);
+        console.error("Connection verification failed:", error);
+        
+        if (retryCount < maxRetries) {
+          // Exponential backoff for retries
+          const delay = Math.min(1000 * Math.pow(2, retryCount), 8000);
+          console.log(`Retrying in ${delay}ms...`);
+          
+          setTimeout(() => {
+            verifyFirebaseConnectivity(retryCount + 1, maxRetries)
+              .then(resolve)
+              .catch(reject);
+          }, delay);
+        } else {
+          console.error("All connection attempts failed");
+          reject(error);
+        }
+      });
+    });
+  }
+  
   // Ensure network is enabled
+  console.log("Enabling Firebase network...");
   db.enableNetwork()
     .then(() => {
       console.log("Firebase network enabled successfully");
       connectionStatus = true;
       
-      // Verify database connection
-      return fetch('https://www.google.com/favicon.ico', { 
-        mode: 'no-cors',
-        cache: 'no-cache',
-        method: 'HEAD'
-      }).then(() => {
-        console.log("Internet connection verified");
-        return db.collection('users').limit(1).get();
-      }).then(() => {
-        console.log("Database connection verified");
+      // Verify connectivity with retry mechanism
+      return verifyFirebaseConnectivity();
+    })
+    .then(() => {
+      console.log("Firebase fully initialized and connected");
+      // Setup connection state listener
+      firebase.firestore.onSnapshotsInSync(() => {
         connectionStatus = true;
-        connectionAttempts = 0;
+        console.log("Firestore data in sync with server");
       });
     })
     .catch(err => {
       console.error("Error establishing connection:", err);
       handleConnectionFailure();
+      
+      // Even though connection failed, we'll still proceed in offline mode
+      console.log("Continuing in offline mode with cached data if available");
     });
 } catch (err) {
   console.error("Firebase initialization error:", err);
@@ -1826,8 +1891,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Add active class to clicked channel
 
-  // Function to render admin panel in offline mode
-  window.renderOfflineAdminPanel = function(user) {
+  // Global function to render admin panel in offline mode
+  function renderOfflineAdminPanel(user) {
     const mainContent = document.getElementById('main-content');
     if (!mainContent) {
       console.error('Main content container not found for offline admin panel');
@@ -4761,3 +4826,86 @@ function enhanceExistingTournamentCards() {
   setupTournamentCountdowns();
   updateParticipantsProgress();
 }
+
+// Function to add manual reconnect widget
+function showReconnectPrompt() {
+  // Remove any existing reconnect prompts
+  const existingPrompt = document.querySelector('.reconnect-prompt');
+  if (existingPrompt) {
+    existingPrompt.remove();
+  }
+  
+  // Create reconnect prompt
+  const reconnectPrompt = document.createElement('div');
+  reconnectPrompt.className = 'reconnect-prompt';
+  reconnectPrompt.innerHTML = `
+    <div class="reconnect-content">
+      <h3><i class="fas fa-wifi-slash"></i> Connection Issue</h3>
+      <p>Having trouble connecting to the server. This may affect some features.</p>
+      <button id="manual-reconnect" class="btn btn-primary">
+        <i class="fas fa-sync-alt"></i> Reconnect
+      </button>
+    </div>
+  `;
+  
+  document.body.appendChild(reconnectPrompt);
+  
+  // Add event listener to reconnect button
+  document.getElementById('manual-reconnect').addEventListener('click', function() {
+    this.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i> Reconnecting...';
+    this.disabled = true;
+    
+    // Reset connection and force reconnect
+    resetConnectionState();
+  });
+}
+
+// Function to check database connectivity and recover if possible
+function checkDatabaseConnectivity() {
+  if (!db) return Promise.resolve(false);
+  
+  return db.enableNetwork()
+    .then(() => {
+      return fetch('https://www.google.com/favicon.ico', { 
+        mode: 'no-cors',
+        cache: 'no-cache',
+        method: 'HEAD',
+        timeout: 5000
+      })
+      .then(() => {
+        return db.collection('users').limit(1).get()
+          .then(() => {
+            // Connection successful - remove any reconnect prompt
+            const existingPrompt = document.querySelector('.reconnect-prompt');
+            if (existingPrompt) {
+              existingPrompt.remove();
+            }
+            return true;
+          });
+      });
+    })
+    .catch(err => {
+      console.error("Connectivity check failed:", err);
+      showReconnectPrompt();
+      return false;
+    });
+}
+
+// Function to force app back to online mode
+function checkAndForceOnlineMode() {
+  if (navigator.onLine) {
+    db.enableNetwork()
+      .then(() => {
+        connectionStatus = true;
+        return checkDatabaseConnectivity();
+      })
+      .catch(err => {
+        console.error("Error forcing online mode:", err);
+      });
+  } else {
+    showReconnectPrompt();
+  }
+}
+
+// Add this function to window for debugging purposes
+window.renderOfflineAdminPanel = renderOfflineAdminPanel;
