@@ -36,15 +36,26 @@ try {
   storage = firebase.storage();
   
   // Set offline/online cache config for better offline experience
-  // Use the recommended approach with merge: true to avoid host override warnings
   db.settings({
     cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
     ignoreUndefinedProperties: true,
-    merge: true,
-    cache: {
-      synchronizeTabs: true
-    }
+    merge: true
   });
+  
+  // Enable offline persistence without deprecated method
+  try {
+    db.enablePersistence({
+      synchronizeTabs: true
+    }).catch(err => {
+      if (err.code === 'failed-precondition') {
+        console.log("Persistence failed: Multiple tabs open");
+      } else if (err.code === 'unimplemented') {
+        console.log("Persistence not supported by browser");
+      }
+    });
+  } catch (err) {
+    console.error("Error enabling persistence:", err);
+  }
 } catch (err) {
   console.error("Firebase initialization error:", err);
   // Show error notification for users
@@ -64,13 +75,7 @@ document.addEventListener('DOMContentLoaded', function() {
   let dbConnectionStatus = true; // Assume connected to begin with
   
   // Set offline/online cache config for better offline experience
-  // Use the recommended approach instead of enablePersistence
   try {
-    db.settings({
-      cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED,
-      ignoreUndefinedProperties: true,
-      merge: true
-    });
     // Enable offline persistence correctly
     db.enablePersistence({
       synchronizeTabs: true
@@ -84,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
   } catch (err) {
-    console.error("Error setting Firestore settings:", err);
+    console.error("Error setting Firestore persistence:", err);
   }
   
   // Add network status indicator to the body
@@ -1837,8 +1842,12 @@ document.addEventListener('DOMContentLoaded', function() {
         // Add active class to clicked channel
 
   // Function to render admin panel in offline mode
-  function renderOfflineAdminPanel(user) {
+  window.renderOfflineAdminPanel = function(user) {
     const mainContent = document.getElementById('main-content');
+    if (!mainContent) {
+      console.error('Main content container not found for offline admin panel');
+      return;
+    }
     
     // Use default data for offline mode
     const offlineStats = {
@@ -2160,8 +2169,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
-  // Expose to window object
-  window.renderOfflineAdminPanel = renderOfflineAdminPanel;
+  // Function already exposed to window object in the function definition
 
         this.classList.add('active');
         
@@ -2647,21 +2655,33 @@ document.addEventListener('DOMContentLoaded', function() {
       // Check if we're offline immediately to speed up load time when no internet
       if (!navigator.onLine) {
         console.log('Detected offline status, using offline admin panel');
-        renderOfflineAdminPanel(user);
+        if (typeof window.renderOfflineAdminPanel === 'function') {
+          window.renderOfflineAdminPanel(user);
+        } else {
+          renderOfflineAdminPanel(user);
+        }
         return;
       }
       
-      // Set timeout for faster offline detection
+      // Set timeout for faster offline detection (shorter timeout for better UX)
       const timeoutId = setTimeout(() => {
         console.log('Request timed out, showing offline admin panel');
-        renderOfflineAdminPanel(user);
-      }, 3000);
+        if (typeof window.renderOfflineAdminPanel === 'function') {
+          window.renderOfflineAdminPanel(user);
+        } else {
+          renderOfflineAdminPanel(user);
+        }
+      }, 2000);
 
       // Make sure db is defined before using it
       if (!db) {
         console.error("Firestore database is not initialized");
         clearTimeout(timeoutId);
-        window.renderOfflineAdminPanel(user);
+        if (typeof window.renderOfflineAdminPanel === 'function') {
+          window.renderOfflineAdminPanel(user);
+        } else {
+          renderOfflineAdminPanel(user);
+        }
         return;
       }
 
@@ -2735,26 +2755,32 @@ document.addEventListener('DOMContentLoaded', function() {
           // If we encounter an error but know the user should be admin based on email, still show admin panel
           if (isAdmin) {
             console.log("Showing offline admin panel due to database error");
-            // Make sure the function is available before calling it
-            if (typeof renderOfflineAdminPanel === 'function') {
-              renderOfflineAdminPanel(user);
-            } else if (typeof window.renderOfflineAdminPanel === 'function') {
+            if (typeof window.renderOfflineAdminPanel === 'function') {
               window.renderOfflineAdminPanel(user);
             } else {
-              // Fallback if function is still not available
-              mainContent.innerHTML = `
-                <div class="container">
-                  <div class="alert warning">
-                    <h3><i class="fas fa-exclamation-triangle"></i> Connection Error</h3>
-                    <p>Unable to connect to the database. Please check your internet connection and try again.</p>
-                    <button class="btn btn-primary mt-3" id="back-to-home">Return to Home</button>
+              try {
+                renderOfflineAdminPanel(user);
+              } catch (e) {
+                console.error("Error rendering offline admin panel:", e);
+                mainContent.innerHTML = `
+                  <div class="container">
+                    <div class="alert warning">
+                      <h3><i class="fas fa-exclamation-triangle"></i> Connection Error</h3>
+                      <p>Unable to connect to the database. Please check your internet connection and try again.</p>
+                      <button class="btn btn-primary mt-3" id="retry-btn">Retry Connection</button>
+                      <button class="btn btn-secondary mt-3 ml-2" id="back-to-home">Return to Home</button>
+                    </div>
                   </div>
-                </div>
-              `;
-              
-              document.getElementById('back-to-home').addEventListener('click', () => {
-                renderMainContent('home');
-              });
+                `;
+                
+                document.getElementById('retry-btn').addEventListener('click', () => {
+                  renderAdminPanel();
+                });
+                
+                document.getElementById('back-to-home').addEventListener('click', () => {
+                  renderMainContent('home');
+                });
+              }
             }
           } else {
             mainContent.innerHTML = `
