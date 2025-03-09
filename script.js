@@ -1,4 +1,3 @@
-
 // Register service worker for offline capabilities
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

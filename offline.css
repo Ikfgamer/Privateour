@@ -1,4 +1,151 @@
 
+/* Offline page styles */
+.offline-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  padding: 2rem;
+  text-align: center;
+  background-color: #1f2440;
+  color: white;
+}
+
+.offline-icon {
+  font-size: 5rem;
+  margin-bottom: 2rem;
+  color: #e69500;
+}
+
+.reconnect-prompt {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 500px;
+  background-color: #fff;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.reconnect-content {
+  padding: 2rem;
+}
+
+.reconnect-content h3 {
+  margin-top: 0;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.reconnect-content p {
+  margin-bottom: 1.5rem;
+  color: #666;
+}
+
+.reconnect-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.network-status {
+  position: fixed;
+  bottom: 20px;
+  left: 20px;
+  display: flex;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.8);
+  color: white;
+  padding: 8px 15px;
+  border-radius: 50px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  font-size: 14px;
+}
+
+.network-status-icon {
+  margin-right: 10px;
+  color: #f44336;
+}
+
+.network-status-icon.online {
+  color: #4CAF50;
+}
+
+.offline-notice {
+  margin-bottom: 20px;
+}
+
+.alert {
+  padding: 15px 20px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+.alert.warning {
+  background-color: rgba(255, 152, 0, 0.1);
+  border-left: 4px solid #FF9800;
+  color: #FF9800;
+}
+
+.alert.warning h3 {
+  color: #FF9800;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert.error {
+  background-color: rgba(244, 67, 54, 0.1);
+  border-left: 4px solid #F44336;
+  color: #F44336;
+}
+
+.alert.error h3 {
+  color: #F44336;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert.info {
+  background-color: rgba(33, 150, 243, 0.1);
+  border-left: 4px solid #2196F3;
+  color: #2196F3;
+}
+
+.alert.info h3 {
+  color: #2196F3;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.alert.success {
+  background-color: rgba(76, 175, 80, 0.1);
+  border-left: 4px solid #4CAF50;
+  color: #4CAF50;
+}
+
+.alert.success h3 {
+  color: #4CAF50;
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+
 /* Offline Fallback Styles */
 #offline-fallback {
   position: fixed;

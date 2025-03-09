@@ -6,6 +6,7 @@ const urlsToCache = [
   '/index.html',
   '/style.css',
   '/script.js',
+  '/offline.css',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css',
   'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap'
 ];
@@ -19,14 +20,17 @@ self.addEventListener('install', event => {
         return cache.addAll(urlsToCache);
       })
   );
+  // Force the waiting service worker to become the active service worker
+  self.skipWaiting();
 });
 
 // Fetch event - serve from cache, fall back to network
 self.addEventListener('fetch', event => {
-  // Skip cross-origin requests
+  // Skip cross-origin requests except for specific CDNs
   if (!event.request.url.startsWith(self.location.origin) && 
       !event.request.url.includes('cdnjs.cloudflare.com') && 
-      !event.request.url.includes('fonts.googleapis.com')) {
+      !event.request.url.includes('fonts.googleapis.com') &&
+      !event.request.url.includes('fonts.gstatic.com')) {
     return;
   }
   
@@ -62,8 +66,16 @@ self.addEventListener('fetch', event => {
           })
           .catch(error => {
             console.log('Fetch failed:', error);
-            // Show offline content or return cached content
-            return caches.match('/index.html');
+            // Try to serve index.html for navigation requests
+            if (event.request.mode === 'navigate') {
+              return caches.match('/index.html');
+            }
+            
+            // Return nothing for other failed requests
+            return new Response('Network error occurred', {
+              status: 408,
+              headers: { 'Content-Type': 'text/plain' }
+            });
           });
       })
   );
@@ -82,6 +94,9 @@ self.addEventListener('activate', event => {
           }
         })
       );
+    }).then(() => {
+      // Claim any clients immediately
+      return self.clients.claim();
     })
   );
 });
